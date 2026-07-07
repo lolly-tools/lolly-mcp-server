@@ -331,6 +331,11 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   };
   const profile = o.profile ?? {};
   const warnings: string[] = [];
+  // Open-password is only wired through for standard `pdf` (see exportUrl); the
+  // CMYK press path drops it, so the returned PDF would be UNprotected. Say so.
+  if (merged.password && exportFmt === 'pdf-cmyk') {
+    warnings.push('Password is not applied for pdf-cmyk — the returned PDF is not protected. Use format "pdf" for an open-password.');
+  }
   let out: { bytes: Uint8Array; mime: string; tier: string };
 
   if (TIER_A.has(exportFmt)) {

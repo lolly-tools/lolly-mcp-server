@@ -114,6 +114,10 @@ export const TOOL_DEFS: McpToolDef[] = [
   },
 ];
 
+/** Tool ids are `[a-z0-9-]` slugs (matches resources.ts); reject anything else so
+ *  a crafted id can't escape TOOLS_DIR via `..` (existence-probe / path leak). */
+const TOOL_ID_RE = /^[a-z0-9-]+$/;
+
 function textOnly(text: string): ToolCallResult {
   return { content: [{ type: 'text', text }] };
 }
@@ -163,6 +167,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
       case 'lolly_describe_tool': {
         const toolId = String(args['toolId'] ?? '');
         if (!toolId) return errorResult('toolId is required.');
+        if (!TOOL_ID_RE.test(toolId)) return errorResult(`Invalid toolId: ${toolId}. Use lolly_list_tools.`);
         const tool = await loadToolCached(toolId).catch(() => null);
         if (!tool) return errorResult(`Tool not found: ${toolId}. Use lolly_list_tools.`);
         const m = tool.manifest;
@@ -183,6 +188,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
       case 'lolly_build_url': {
         const toolId = String(args['toolId'] ?? '');
         if (!toolId) return errorResult('toolId is required.');
+        if (!TOOL_ID_RE.test(toolId)) return errorResult(`Invalid toolId: ${toolId}.`);
         const tool = await loadToolCached(toolId).catch(() => null);
         if (!tool) return errorResult(`Tool not found: ${toolId}.`);
         const inputs = (args['inputs'] as Record<string, unknown>) ?? {};
@@ -193,6 +199,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
       case 'lolly_render': {
         const toolId = String(args['toolId'] ?? '');
         if (!toolId) return errorResult('toolId is required.');
+        if (!TOOL_ID_RE.test(toolId)) return errorResult(`Invalid toolId: ${toolId}. Use lolly_list_tools.`);
         const tool = await loadToolCached(toolId).catch(() => null);
         if (!tool) return errorResult(`Tool not found: ${toolId}. Use lolly_list_tools.`);
         const inputs = (args['inputs'] as Record<string, unknown>) ?? {};
@@ -248,6 +255,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const toolId = String(args['toolId'] ?? '');
         const file = args['file'] as { base64?: string; name?: string; mime?: string } | undefined;
         if (!toolId) return errorResult('toolId is required.');
+        if (!TOOL_ID_RE.test(toolId)) return errorResult(`Invalid toolId: ${toolId}. Use lolly_list_tools.`);
         if (!file?.base64) return errorResult('file.base64 is required.');
         const inputs = (args['inputs'] as Record<string, unknown>) ?? {};
         const res = await transform(toolId, { base64: file.base64, name: file.name, mime: file.mime }, inputs);
