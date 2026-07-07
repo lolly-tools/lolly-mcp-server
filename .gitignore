@@ -1,0 +1,7 @@
+# Chromium for the Tier-B render path — installed via `npm run install:browser`
+# (playwright-core → this package's scoped browsers dir). Hundreds of MB, machine-
+# specific; never committed. Kept inside the package so it travels with the repo
+# split (plans/mcp-server.md) yet stays out of git and the Vercel function bundle.
+.browsers/
+.DS_Store
+node_modules/
