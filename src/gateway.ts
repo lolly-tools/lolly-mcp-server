@@ -22,7 +22,7 @@ import { dispatch } from './server.ts';
 import type { JsonRpcRequest } from './protocol.ts';
 import {
   authorizationServerMetadata, authorizeGet, authorizePost, isAuthorized,
-  protectedResourceMetadata, register, token, type Result,
+  protectedResourceMetadata, register, signingSecret, token, type Result,
 } from './oauth.ts';
 
 const CORS: Record<string, string> = {
@@ -76,9 +76,20 @@ const formToObject = (raw: string): Record<string, string> =>
   Object.fromEntries(new URLSearchParams(raw));
 
 export function createGateway(env: NodeJS.ProcessEnv = process.env): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  // Is the MCP configured to actually run on THIS deployment? It needs a shared
+  // token / signing secret (or an explicit anonymous opt-in). A deployment with
+  // none — e.g. the blank-brand site (lolly.art), which carries no LOLLY_MCP_*
+  // secrets — should not advertise an OAuth/discovery/registration surface that
+  // can only dead-end; 404 every route so the endpoint cleanly doesn't exist.
+  const mcpEnabled = !!signingSecret(env) || env.LOLLY_MCP_ALLOW_ANONYMOUS === '1';
   return async (req, res) => {
     const method = req.method || 'GET';
     if (method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
+    if (!mcpEnabled) {
+      res.writeHead(404, { ...CORS, 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not_found' }));
+      return;
+    }
 
     const url = new URL(req.url || '/', 'http://internal');
     const path = url.pathname.replace(/\/+$/, '') || '/';
