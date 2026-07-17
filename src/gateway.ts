@@ -4,6 +4,7 @@
  * vercel-entry.ts) and by the standalone HTTP server (http.ts). It routes:
  *
  *   OPTIONS *                                     → CORS preflight
+ *   GET  …/tool/<id>.<ext>                         → public render      (render-get.ts)
  *   GET  /.well-known/oauth-protected-resource    → resource metadata  (oauth.ts)
  *   GET  /.well-known/oauth-authorization-server   → AS metadata        (oauth.ts)
  *   POST …/register  …/authorize  …/token          → the OAuth flow     (oauth.ts)
@@ -20,6 +21,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dispatch } from './server.ts';
 import type { JsonRpcRequest } from './protocol.ts';
+import { matchRenderGetPath, renderGet } from './render-get.ts';
 import {
   authorizationServerMetadata, authorizeGet, authorizePost, isAuthorized,
   protectedResourceMetadata, register, signingSecret, token, type Result,
@@ -85,14 +87,34 @@ export function createGateway(env: NodeJS.ProcessEnv = process.env): (req: Incom
   return async (req, res) => {
     const method = req.method || 'GET';
     if (method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
+
+    const url = new URL(req.url || '/', 'http://internal');
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    // ── public GET render: /tool/<id>.<ext>?<query> ─────────────────────────
+    // Deliberately OUTSIDE the mcpEnabled gate: it serves public tool+catalog
+    // data with no auth and no user state, so it works on deployments that
+    // carry no MCP secrets. Policy + refusals live in render-get.ts; self-
+    // hosters disable the route entirely with LOLLY_DISABLE_RENDER_GET=1.
+    if ((method === 'GET' || method === 'HEAD') && matchRenderGetPath(path)) {
+      const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0]!.trim();
+      const r = await renderGet(path, url.search.replace(/^\?/, ''), {
+        ip: fwd || req.socket?.remoteAddress || 'unknown',
+        ifNoneMatch: req.headers['if-none-match'] as string | undefined,
+        env,
+      });
+      res.writeHead(r.status, { ...CORS, ...r.headers });
+      if (method === 'HEAD' || r.body === undefined) res.end();
+      else res.end(typeof r.body === 'string' ? r.body : Buffer.from(r.body));
+      return;
+    }
+
     if (!mcpEnabled) {
       res.writeHead(404, { ...CORS, 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not_found' }));
       return;
     }
 
-    const url = new URL(req.url || '/', 'http://internal');
-    const path = url.pathname.replace(/\/+$/, '') || '/';
     const base = baseUrlOf(req);
 
     // ── discovery (GET) ──────────────────────────────────────────────────────

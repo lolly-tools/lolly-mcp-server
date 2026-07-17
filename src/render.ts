@@ -15,10 +15,15 @@
 
 import {
   createRuntime, parseUrlState, expandQuery,
-  C2PA_FORMATS, embedC2pa, ENGINE_VERSION,
+  C2PA_FORMATS, embedC2pa, buildInputModel,
   parseDimension, toPixels,
 } from '@lolly/engine';
 import type { ExportFormat, ExportOpts, Profile, InputFile } from '../../../engine/src/bridge/host-v1.ts';
+import type { ToolManifest } from '../../../engine/src/loader.ts';
+// Relative imports (not `@lolly-tools/node-shell/...`): this file is inlined into the
+// Vercel MCP bundle, where a bare workspace specifier would dangle (see bridge.ts).
+import { assertRenderOk, RenderIntegrityError } from '../../../packages/node-shell/src/render-integrity.ts';
+import { buildExportC2paOpts } from '../../../packages/node-shell/src/c2pa-opts.ts';
 import { readFile } from 'node:fs/promises';
 import { loadToolCached } from './catalog.ts';
 import { withHost } from './host.ts';
@@ -27,8 +32,16 @@ import { webShellBase, closeWebShell } from './webshell.ts';
 
 export { closeWebShell };
 
-/** Formats the pure engine can produce without a browser engine. */
-const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
+/** Formats the pure engine can produce without a browser engine (NODE_FORMATS). */
+export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
+
+/** Longest raster edge the resvg fast path will produce. A content-sized SVG
+ *  (unbounded text → a viewBox that scales with input length) must never dictate
+ *  the raster allocation: `fitTo: original` would honour a multi-billion-pixel
+ *  intrinsic size verbatim and OOM the process. Mirrors render-get.ts
+ *  MAX_EDGE_PX, which only validates the width/height QUERY params — this cap
+ *  is what actually bounds the pixels. */
+const MAX_RASTER_EDGE_PX = 10_000;
 
 export interface RenderOpts {
   format?: string;
@@ -43,6 +56,11 @@ export interface RenderOpts {
   password?: string;
   c2pa?: { on: boolean; days: number | null } | null;
   profile?: Profile;
+  /** Refuse the Tier-B (Chromium) fallback: browser-free-path failures surface
+   *  as a RenderError (400) instead of silently escalating to a full browser
+   *  render. Always set by the public unauthenticated GET endpoint, whose
+   *  stated policy is browser-free formats only (render-get.ts). */
+  noBrowser?: boolean;
 }
 
 export interface RenderResult {
@@ -74,6 +92,7 @@ export function mimeForFormat(fmt: string): string {
     case 'pdf': case 'pdf-cmyk': return 'application/pdf';
     case 'emf': return 'image/emf';
     case 'eps': case 'eps-cmyk': return 'application/postscript';
+    case 'dxf': return 'image/vnd.dxf';
     case 'tiff': case 'cmyk-tiff': return 'image/tiff';
     case 'ico': return 'image/x-icon';
     case 'zip': return 'application/zip';
@@ -91,7 +110,7 @@ export function mimeForFormat(fmt: string): string {
 }
 
 export function isTextFormat(fmt: string): boolean {
-  return ['svg', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf', 'eps', 'eps-cmyk'].includes(normFormat(fmt));
+  return ['svg', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf', 'eps', 'eps-cmyk', 'dxf'].includes(normFormat(fmt));
 }
 
 /** Target pixel width for the resvg raster path, honouring physical units. */
@@ -131,16 +150,45 @@ async function renderTierA(
     canvas.innerHTML = runtime.getHydrated();
     const blob = await runtime.export(canvas as unknown as Element, fmt as ExportFormat, opts);
     const bytes = new Uint8Array(await blob.arrayBuffer());
+    // Honest failure: a lifecycle hook that threw means the canvas (and these bytes)
+    // are blank — surface the hook's message instead of handing the agent a
+    // valid-but-empty file. Tier A only: Tier B re-renders in a real web shell whose
+    // host has the full capability set, so these hookErrors don't describe its bytes.
+    try {
+      assertRenderOk({ hookErrors: runtime.hookErrors, format: fmt, bytes });
+    } catch (e) {
+      if (e instanceof RenderIntegrityError) throw new RenderError(e.message);
+      throw e;
+    }
     return { bytes, mime: blob.type || mimeForFormat(fmt) };
   });
 }
 
-/** Rasterise an SVG string to PNG via resvg. Text renders from catalog fonts. */
+/** Rasterise an SVG string to PNG via resvg. Text renders from catalog fonts.
+ *  Output is ALWAYS bounded by MAX_RASTER_EDGE_PX, independent of the caller's
+ *  `width` and of the SVG's intrinsic size (see the constant's comment). */
 async function svgToPng(svg: string, width: number | undefined, background: string | undefined): Promise<Uint8Array> {
   const { Resvg } = await import('@resvg/resvg-js');
+  // Cheap parse-only probe for the intrinsic size (viewBox/width/height) — no raster.
+  const probe = new Resvg(svg, { font: { loadSystemFonts: false } });
+  const iw = probe.width, ih = probe.height;
+  if (!(iw > 0) || !(ih > 0)) throw new RenderError('SVG has no rasterisable size');
+  const capScale = Math.min(MAX_RASTER_EDGE_PX / iw, MAX_RASTER_EDGE_PX / ih);
+  const wantScale = width && width > 0 ? width / iw : 1;
+  const scale = Math.min(wantScale, capScale);
+  // Beyond MAX_RASTER_EDGE_PX:1 aspect the capped raster's short edge drops
+  // below one pixel — resvg refuses a zero-size target, so refuse honestly here.
+  if (iw * scale < 1 || ih * scale < 1) {
+    throw new RenderError('SVG aspect ratio is too extreme to rasterise within the size cap — export svg instead.');
+  }
+  // Exact requested width when it fits the cap; otherwise a zoom that clamps the
+  // LONGEST edge (a width-mode fit alone couldn't bound a very tall SVG's height).
+  const fitTo = width && width > 0 && scale === wantScale
+    ? { mode: 'width' as const, value: Math.round(width) }
+    : { mode: 'zoom' as const, value: scale };
   const r = new Resvg(svg, {
     ...(background ? { background } : {}),
-    fitTo: width ? { mode: 'width', value: width } : { mode: 'original' },
+    fitTo,
     font: { fontDirs: [FONTS_DIR], loadSystemFonts: true },
   });
   return r.render().asPng();
@@ -281,20 +329,19 @@ async function renderTierB(
   }
 }
 
-async function stampC2pa(bytes: Uint8Array, fmt: string, toolName: string, toolId: string, o: RenderOpts): Promise<Uint8Array> {
-  const days = o.c2pa?.days ?? 30;
-  const profile = o.profile ?? {};
-  const stamped = await embedC2pa(bytes, fmt as ExportFormat, {
-    title: toolName,
-    claimGenerator: 'Lolly lolly.tools',
-    generatorInfo: { name: 'Lolly', version: ENGINE_VERSION },
-    environment: { surface: 'mcp', engine: 'node', os: process.platform, format: fmt, tool: toolId },
-    ...(profile.useDetails === true && profile.firstname
-      ? { author: { name: [profile.firstname, profile.lastname].filter(Boolean).join(' '), ...(profile.email ? { email: profile.email } : {}) } }
-      : {}),
-    dates: { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + days * 86_400_000) },
+async function stampC2pa(bytes: Uint8Array, fmt: string, manifest: ToolManifest, values: Record<string, unknown>, o: RenderOpts): Promise<Uint8Array> {
+  // The shared node-shell payload (dimensions, inputs digest, date, author gate),
+  // so an MCP-made asset inspects as richly as a CLI/TUI/browser-made one.
+  const opts = buildExportC2paOpts({
+    surface: 'mcp',
+    manifest,
+    model: buildInputModel(manifest, { initial: values as never }),
+    format: fmt,
+    dims: { width: o.width ?? null, height: o.height ?? null, unit: o.unit ?? null, dpi: o.dpi ?? null },
+    days: o.c2pa?.days,
+    profile: o.profile,
   });
-  return stamped;
+  return embedC2pa(bytes, fmt as ExportFormat, opts);
 }
 
 /**
@@ -349,16 +396,24 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
       const png = await svgToPng(new TextDecoder().decode(svg.bytes), px, merged.background);
       out = { bytes: png, mime: 'image/png', tier: 'A(resvg)' };
     } catch (e) {
+      if (o.noBrowser) {
+        // No silent Tier-B escalation on the browser-free contract — surface the
+        // fast path's own failure (hook error, resvg refusal) as the answer.
+        throw e instanceof RenderError ? e : new RenderError(`SVG→PNG render failed: ${(e as Error).message}`);
+      }
       warnings.push(`SVG→PNG fast path unavailable (${(e as Error).message}); trying the browser tier.`);
       out = { ...(await renderTierB(toolId, q, exportFmt, merged)), tier: 'B' };
     }
   } else {
+    if (o.noBrowser) {
+      throw new RenderError(`Format "${fmt}" needs the browser render tier, which is not available for this request.`);
+    }
     out = { ...(await renderTierB(toolId, q, exportFmt, merged)), tier: 'B' };
   }
 
   let bytes = out.bytes;
   if (merged.c2pa?.on && C2PA_FORMATS.includes(exportFmt as ExportFormat) && !(exportFmt === 'pdf' && merged.password)) {
-    try { bytes = await stampC2pa(bytes, exportFmt, tool.manifest.name, toolId, merged); }
+    try { bytes = await stampC2pa(bytes, exportFmt, tool.manifest, values, merged); }
     catch (e) { warnings.push(`Content Credentials not attached — ${(e as Error).message}`); }
   } else if (merged.c2pa?.on) {
     warnings.push(`Format "${fmt}" cannot carry Content Credentials — skipped.`);

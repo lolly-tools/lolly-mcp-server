@@ -7,7 +7,7 @@
 
 import { ok, fail, ERR } from './protocol.ts';
 import type { JsonRpcRequest, JsonRpcResponse } from './protocol.ts';
-import { TOOL_DEFS, callTool, serverInstructions } from './tools.ts';
+import { TOOL_DEFS, callTool, serverInstructions, listPrompts, getPrompt } from './tools.ts';
 import { RESOURCES, RESOURCE_TEMPLATES, readResource } from './resources.ts';
 
 export const PROTOCOL_VERSION = '2025-06-18';
@@ -49,7 +49,14 @@ export async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse | n
         return ok(id, { contents: [await readResource(params.uri)] });
       }
       case 'prompts/list':
-        return ok(id, { prompts: [] });
+        return ok(id, { prompts: await listPrompts() });
+      case 'prompts/get': {
+        const params = (req.params ?? {}) as { name?: string; arguments?: Record<string, string> };
+        if (!params.name) return fail(id, ERR.INVALID_PARAMS, 'prompts/get requires a name');
+        const prompt = await getPrompt(params.name, params.arguments ?? {});
+        if (!prompt) return fail(id, ERR.INVALID_PARAMS, `Unknown prompt: ${params.name}`);
+        return ok(id, prompt);
+      }
       default:
         if (isNotification) return null;
         return fail(id, ERR.METHOD_NOT_FOUND, `Method not found: ${req.method}`);
