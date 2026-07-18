@@ -8,7 +8,8 @@
  * describe_tool. See plans/mcp-server.md §3.
  */
 
-import { buildInputModel, serializeUrlState, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, c2paTrustAnchors, extractFileMetadata } from '@lolly/engine';
+import { buildInputModel, serializeUrlState, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata } from '@lolly/engine';
+import type { C2paVerdict, C2paVerdictState } from '@lolly/engine';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 import type { ContentBlock, ToolCallResult } from './protocol.ts';
 import { listTools, loadToolCached, loadIndex } from './catalog.ts';
@@ -156,9 +157,11 @@ function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: 
 
 type ExampleVariant = { label?: string; theme?: string; values?: Record<string, unknown> };
 
-/** Example looks for a tool: top-level `examples`, else the deprecated `featured.variants` alias. */
+/** Example looks for a tool: top-level `examples`, else the deprecated `featured.variants` alias.
+ *  (Omit first: the SDK manifest type now declares `examples?: unknown[]`, and intersecting
+ *  that with ExampleVariant[] made the element type collapse to unknown.) */
 function exampleLooks(m: ToolManifest, cap: number): { label?: string; inputs?: Record<string, unknown> }[] {
-  const t = m as ToolManifest & { examples?: ExampleVariant[]; featured?: { variants?: ExampleVariant[] } };
+  const t = m as Omit<ToolManifest, 'examples'> & { examples?: ExampleVariant[]; featured?: { variants?: ExampleVariant[] } };
   const ex = t.examples?.length ? t.examples : (t.featured?.variants ?? []);
   return ex.slice(0, cap).map(v => ({ ...(v.label ? { label: v.label } : {}), inputs: v.values }));
 }
@@ -170,17 +173,31 @@ const clean = (v: unknown) => String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g,
 
 type VerifyReport = Awaited<ReturnType<typeof verifyC2pa>>;
 
-/** The CLI's `lolly validate` verdict ladder (shells/cli/src/validate.ts), as a slug + headline. */
-function verifyVerdict(report: VerifyReport): { verdict: string; headline: string } {
-  const fails = report.checks.filter(c => !c.ok && c.code !== 'signingCredential.untrusted');
-  const expiredOnly = fails.length === 1 && fails[0]!.code === 'signingCredential.expired';
-  if (report.madeWithLolly) return { verdict: 'made-with-lolly', headline: 'Made with Lolly — credential intact, file unchanged since export' };
-  if (report.delivered && report.trusted) return { verdict: 'delivered-by-lolly', headline: 'Delivered by Lolly — verified authentic official asset; delivered by Lolly, not created by it' };
-  if (report.likelyMadeWithLolly) return { verdict: 'likely-made-with-lolly', headline: "Likely made with Lolly — the credential's own content checks out and records a Lolly export, but this file's bytes no longer match it" };
-  if (expiredOnly) return { verdict: 'credential-expired', headline: 'Credential expired — the file still matches what was signed; the one-year on-device certificate has lapsed' };
-  if (report.state === 'valid') return { verdict: 'credential-intact', headline: 'Credential intact — signed on-device (integrity, not identity)' };
-  if (report.state === 'invalid') return { verdict: 'credential-broken', headline: 'Credential broken — the file no longer matches what was signed' };
-  return { verdict: 'no-credential', headline: 'No Content Credentials found' };
+/**
+ * The legacy verdict slug + headline for each engine-resolved state
+ * (resolveVerdict, engine/src/c2pa-verdict.ts — which replaced the private
+ * ladder + expired-only re-derivation that used to live here). Two quirks of
+ * THIS surface, preserved byte-for-byte:
+ *  • no partsMadeWithLolly headline was ever emitted here (unlike the CLI,
+ *    which elevates that flag) — a parts file keeps reading 'credential-intact';
+ *  • no separate "verified identity" slug (the web /valid has a "Verified"
+ *    hero): the 'trusted' state also reads 'credential-intact', with the
+ *    identity carried in the report/resolved fields.
+ */
+const VERDICT_SLUGS: Record<C2paVerdictState, { verdict: string; headline: string }> = {
+  lolly: { verdict: 'made-with-lolly', headline: 'Made with Lolly — credential intact, file unchanged since export' },
+  delivered: { verdict: 'delivered-by-lolly', headline: 'Delivered by Lolly — verified authentic official asset; delivered by Lolly, not created by it' },
+  likelyLolly: { verdict: 'likely-made-with-lolly', headline: "Likely made with Lolly — the credential's own content checks out and records a Lolly export, but this file's bytes no longer match it" },
+  expired: { verdict: 'credential-expired', headline: 'Credential expired — the file still matches what was signed; the one-year on-device certificate has lapsed' },
+  trusted: { verdict: 'credential-intact', headline: 'Credential intact — signed on-device (integrity, not identity)' },
+  valid: { verdict: 'credential-intact', headline: 'Credential intact — signed on-device (integrity, not identity)' },
+  invalid: { verdict: 'credential-broken', headline: 'Credential broken — the file no longer matches what was signed' },
+  none: { verdict: 'no-credential', headline: 'No Content Credentials found' },
+};
+
+function verifyVerdict(report: VerifyReport): { verdict: string; headline: string; resolved: C2paVerdict } {
+  const resolved = resolveVerdict(report);
+  return { ...VERDICT_SLUGS[resolved.state], resolved };
 }
 
 /** Human-readable verify report — the same facts `lolly validate` prints. */
@@ -359,16 +376,23 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const file = args['file'] as { base64?: string; name?: string; mime?: string } | undefined;
         if (!file?.base64) return errorResult('file.base64 is required.');
         const bytes = Uint8Array.from(Buffer.from(file.base64, 'base64'));
-        // The vendored C2PA trust list, so recognised signers read as trusted here
-        // exactly as they do in `lolly validate` and the web /valid view.
-        const report = await verifyC2pa(bytes, { trustAnchors: [...c2paTrustAnchors()] });
+        // The vendored C2PA trust list ONLY — same anchor policy as the CLI's
+        // flagless `lolly validate`, but NOT the web /valid view, which also
+        // pins the Lolly CA root (so a Lolly-CA-signed export reads as a
+        // CA-verified identity there and plain intact here). The split is
+        // explicit in the engine's defaultTrustAnchors (engine/src/
+        // c2pa-verdict.ts) and flagged in plans/maintainability-2026-07-18.md.
+        const report = await verifyC2pa(bytes, { trustAnchors: defaultTrustAnchors({ includeLollyRoot: false }) });
         let metadata: ReturnType<typeof extractFileMetadata> | null = null;
         try { metadata = extractFileMetadata(bytes); } catch { /* best-effort — the verdict stands alone */ }
-        const { verdict, headline } = verifyVerdict(report);
+        const { verdict, headline, resolved } = verifyVerdict(report);
         return {
           content: [
             { type: 'text', text: verifyText(file.name ?? 'file', report, headline) },
-            { type: 'text', text: JSON.stringify({ verdict, report, metadata }, null, 2) },
+            // `verdict` (legacy slug) and `report` are the compatibility surface —
+            // shapes unchanged; `resolved` is ADDITIVE: the engine's semantic
+            // verdict (state/tone + the flags that drove it) from resolveVerdict.
+            { type: 'text', text: JSON.stringify({ verdict, resolved, report, metadata }, null, 2) },
           ],
         };
       }
