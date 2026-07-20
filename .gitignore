@@ -5,3 +5,8 @@
 .browsers/
 .DS_Store
 node_modules/
+# Dotenv hardening: the real secrets live in deploy/deploy.env (ignored by
+# deploy/.gitignore), but ignore any dotenv at the package root too so a stray
+# services/mcp/.env can never be committed. See plans/secrets-review.md.
+.env*
+!.env.example
