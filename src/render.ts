@@ -18,7 +18,7 @@ import {
   C2PA_FORMATS, embedC2pa, buildInputModel,
   parseDimension, toPixels,
 } from '@lolly/engine';
-import type { ExportFormat, ExportOpts, Profile, InputFile } from '../../../engine/src/bridge/host-v1.ts';
+import type { ExportFormat, ExportOpts, Profile, InputFile } from '@lolly-tools/core/host-v1';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 // Relative imports (not `@lolly-tools/node-shell/...`): this file is inlined into the
 // Vercel MCP bundle, where a bare workspace specifier would dangle (see bridge.ts).

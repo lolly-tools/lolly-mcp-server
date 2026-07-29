@@ -17,7 +17,7 @@
  */
 
 import { createCliBridge } from '../../../shells/cli/src/bridge.ts';
-import type { HostV1, Profile } from '../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 type Jsdom = { window: Window & typeof globalThis };
 
