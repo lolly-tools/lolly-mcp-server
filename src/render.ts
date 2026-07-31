@@ -214,7 +214,14 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
         return await chromium.launch({
           ...(channel ? { channel } : {}),
           ...(executablePath ? { executablePath } : {}),
-          args: ['--no-sandbox'],
+          // Rendering-intent pins, mirrored from packages/node-shell/src/browsers.ts
+          // (see the full comment there): host-profile-independent sRGB colour and
+          // unhinted glyph metrics, so hosted layouts don't reflow vs desktop.
+          // Known divergence from node-shell: no swiftshader pair here, so a
+          // WebGL-dependent tool (3d, viz) renders its fallback rather than GL
+          // content on this tier. Add '--use-angle=swiftshader',
+          // '--enable-unsafe-swiftshader' if a hosted deployment needs those tools.
+          args: ['--no-sandbox', '--force-color-profile=srgb', '--font-render-hinting=none'],
         });
       } catch (err) {
         const msg = (err as Error).message || '';
