@@ -25,6 +25,7 @@ import type { ToolManifest } from '../../../engine/src/loader.ts';
 import { assertRenderOk, RenderIntegrityError } from '../../../packages/node-shell/src/render-integrity.ts';
 import { isDeepFormat, DeepSourceError } from '../../../packages/node-shell/src/raster.ts';
 import { buildExportC2paOpts } from '../../../packages/node-shell/src/c2pa-opts.ts';
+import { needsBrowserTier } from '../../../packages/node-shell/src/browser-tier.ts';
 import { readFile } from 'node:fs/promises';
 import { loadToolCached } from './catalog.ts';
 import { withHost } from './host.ts';
@@ -483,14 +484,17 @@ export interface FileArg {
 }
 
 /**
- * A transform hook that cannot run in this Node host says so in its thrown sentence
- * (redact: "needs a browser canvas" / "not available in this app"). Those exports are
+ * A transform hook that cannot run in this Node host says so with a typed sentinel
+ * (`err.code === 'NEEDS_BROWSER'`) or, for already-shipped tools, in its thrown sentence
+ * (redact: "needs a browser canvas" / "isn't available in this app"). Those exports are
  * re-run on Tier B rather than failing — a rebuild-the-pixels utility has no honest
- * jsdom path. A failed verification gate reads nothing like this, so it still fails.
+ * jsdom path. A failed verification gate reads like neither, so it still fails.
+ *
+ * Re-exported, NOT reimplemented: this file used to carry its own prose-only copy that
+ * missed the "isn't"/"is not" split, so `convert-image` escalated correctly on the CLI
+ * and failed hard over MCP. One predicate, one answer, whichever host you reach.
  */
-export function needsBrowserTier(message: string): boolean {
-  return /browser canvas|not available in this app|needs a browser|requires a browser/i.test(message);
-}
+export { needsBrowserTier };
 
 /**
  * Tier-B transform — drive the real web shell, drop the caller's bytes into the tool's

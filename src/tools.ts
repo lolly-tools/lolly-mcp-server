@@ -9,7 +9,10 @@
  */
 
 import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS } from '@lolly/engine';
-import type { C2paVerdict, C2paVerdictState } from '@lolly/engine';
+import type { C2paVerdict } from '@lolly/engine';
+// Relative import (not `@lolly-tools/node-shell/...`): this file is inlined into the
+// serverless bundle, same as render.ts's node-shell imports.
+import { VERDICT_SLUGS } from '../../../packages/node-shell/src/verdict-slugs.ts';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 import type { ContentBlock, ToolCallResult } from './protocol.ts';
 import { listTools, loadToolCached, loadIndex } from './catalog.ts';
@@ -331,26 +334,17 @@ const clean = (v: unknown) => String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g,
 type VerifyReport = Awaited<ReturnType<typeof verifyC2pa>>;
 
 /**
- * The legacy verdict slug + headline for each engine-resolved state
- * (resolveVerdict, engine/src/c2pa-verdict.ts — which replaced the private
- * ladder + expired-only re-derivation that used to live here). Two quirks of
- * THIS surface, preserved byte-for-byte:
- *  • no partsMadeWithLolly headline was ever emitted here (unlike the CLI,
- *    which elevates that flag) — a parts file keeps reading 'credential-intact';
- *  • no separate "verified identity" slug (the web /valid has a "Verified"
- *    hero): the 'trusted' state also reads 'credential-intact', with the
- *    identity carried in the report/resolved fields.
+ * The verdict slug + headline for each engine-resolved state now lives in the shared
+ * Node package (packages/node-shell/src/verdict-slugs.ts) so this server and
+ * `lolly validate --json` cannot answer the same question in two vocabularies — the
+ * lesson the forked verdict LADDER already taught. Two quirks of this surface survive
+ * the move, because they are properties of the shared table itself:
+ *  • no partsMadeWithLolly headline (unlike the CLI, which elevates that flag) — a
+ *    parts file keeps reading 'credential-intact';
+ *  • no separate "verified identity" slug (the web /valid has a "Verified" hero): the
+ *    'trusted' state also reads 'credential-intact', with the identity carried in the
+ *    report/resolved fields.
  */
-const VERDICT_SLUGS: Record<C2paVerdictState, { verdict: string; headline: string }> = {
-  lolly: { verdict: 'made-with-lolly', headline: 'Made with Lolly — credential intact, file unchanged since export' },
-  delivered: { verdict: 'delivered-by-lolly', headline: 'Delivered by Lolly — verified authentic official asset; delivered by Lolly, not created by it' },
-  likelyLolly: { verdict: 'likely-made-with-lolly', headline: "Likely made with Lolly — the credential's own content checks out and records a Lolly export, but this file's bytes no longer match it" },
-  expired: { verdict: 'credential-expired', headline: 'Credential expired — the file still matches what was signed; the one-year on-device certificate has lapsed' },
-  trusted: { verdict: 'credential-intact', headline: 'Credential intact — signed on-device (integrity, not identity)' },
-  valid: { verdict: 'credential-intact', headline: 'Credential intact — signed on-device (integrity, not identity)' },
-  invalid: { verdict: 'credential-broken', headline: 'Credential broken — the file no longer matches what was signed' },
-  none: { verdict: 'no-credential', headline: 'No Content Credentials found' },
-};
 
 function verifyVerdict(report: VerifyReport): { verdict: string; headline: string; resolved: C2paVerdict } {
   const resolved = resolveVerdict(report);
