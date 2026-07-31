@@ -8,12 +8,12 @@
  * describe_tool. See plans/mcp-server.md §3.
  */
 
-import { buildInputModel, serializeUrlState, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata } from '@lolly/engine';
+import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata } from '@lolly/engine';
 import type { C2paVerdict, C2paVerdictState } from '@lolly/engine';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 import type { ContentBlock, ToolCallResult } from './protocol.ts';
 import { listTools, loadToolCached, loadIndex } from './catalog.ts';
-import { toolInputSchema } from './schema.ts';
+import { toolInputSchema, fileInputId } from './schema.ts';
 import { render, transform, mimeForFormat, isTextFormat, normFormat } from './render.ts';
 import type { RenderOpts } from './render.ts';
 
@@ -117,6 +117,46 @@ export const TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: 'lolly_redact',
+    description:
+      'Redact regions of an image, SVG or PDF on-device. Covered content is destroyed and the file rebuilt, ' +
+      'not drawn over: the returned file has no metadata, no trailing bytes and, for a PDF, no text layer. ' +
+      'Instructions are the same canonical string a Lolly share link carries, so one string can be applied to ' +
+      'every file of an identical layout. The tool re-checks its own output and returns an error with nothing ' +
+      'attached when a check fails. Not watermarked; Content Credentials only when resign is set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: FILE_ARG,
+        instructions: {
+          type: 'string',
+          description:
+            'Canonical instruction string: a lolly.tools redact link, or just its query — e.g. ' +
+            '"bars=1,40,60,200,24~1,40,100,120,14&quantise=1&grayscale=1". Bar fields are page,x,y,w,h: ' +
+            "PDF bars in points from the page's top-left, image bars in pixels from the top-left.",
+        },
+        bars: {
+          type: 'array',
+          description: 'Bars as objects instead of a string. Merged over anything in `instructions`.',
+          items: {
+            type: 'object',
+            properties: {
+              page: { type: 'number', description: '1-based page (1 for a single image).' },
+              x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+            },
+            required: ['x', 'y', 'w', 'h'],
+            additionalProperties: true,
+          },
+        },
+        quantise: { type: 'boolean', description: 'Round bar widths up to a coarse grid so width hints at length less (default on).' },
+        grayscale: { type: 'boolean', description: 'Drop colour — removes colour-laser tracking dots from a scan.' },
+        resign: { type: 'boolean', description: 'Opt in to a fresh Content Credential on the redacted copy (default off).' },
+      },
+      required: ['file'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'lolly_verify',
     description: "Verify a file's Content Credentials (C2PA) on-device: was it genuinely made with Lolly, who signed it, and has it changed since export. Returns the verdict, signer identity, edit history, and embedded file metadata (EXIF/XMP) as text + JSON. Bytes in, verdict out — nothing leaves the server.",
     inputSchema: {
@@ -153,6 +193,26 @@ function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: 
   const editUrl = query ? `${WEB_BASE}/#/tool/${manifest.id}?${query}` : `${WEB_BASE}/#/tool/${manifest.id}`;
   const renderUrl = buildEmbedUrl({ toolId: manifest.id, format: o.format ?? manifest.render.formats[0], query });
   return { query, editUrl, renderUrl };
+}
+
+/**
+ * Turn a lolly_redact call into the tool's inputs. The instruction string is the
+ * canonical one — a lolly.tools redact link or just its query — so the identical
+ * string works as a share link, as `lolly redact --bars=…`, and here. Explicit
+ * `bars`/`quantise`/`grayscale`/`resign` arguments win over the string, and the
+ * file-typed input never comes from it (the bytes are the `file` argument).
+ */
+export async function redactInputs(manifest: ToolManifest, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const raw = String(args['instructions'] ?? '').trim();
+  const query = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw;
+  const inputs: Record<string, unknown> = {};
+  if (query) Object.assign(inputs, parseUrlState(await expandQuery(query), manifest).values);
+  delete inputs[fileInputId(manifest) ?? 'source'];
+  if (Array.isArray(args['bars'])) inputs['bars'] = args['bars'];
+  for (const k of ['quantise', 'grayscale', 'resign']) {
+    if (typeof args[k] === 'boolean') inputs[k] = args[k];
+  }
+  return inputs;
 }
 
 type ExampleVariant = { label?: string; theme?: string; values?: Record<string, unknown> };
@@ -366,8 +426,39 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const res = await transform(toolId, { base64: file.base64, name: file.name, mime: file.mime }, inputs);
         return {
           content: [
-            { type: 'text', text: `Transformed ${file.name ?? 'file'} → ${res.filename} (${res.bytes.length} bytes). Not watermarked; no provenance added.` },
+            { type: 'text', text: `Transformed ${file.name ?? 'file'} → ${res.filename} (${res.bytes.length} bytes, tier ${res.tier}). Not watermarked; no provenance added.` },
             { type: 'resource', resource: { uri: `lolly://transform/${res.filename}`, mimeType: res.mime, blob: Buffer.from(res.bytes).toString('base64') } },
+          ],
+        };
+      }
+
+      case 'lolly_redact': {
+        const file = args['file'] as { base64?: string; name?: string; mime?: string } | undefined;
+        if (!file?.base64) return errorResult('file.base64 is required.');
+        const tool = await loadToolCached('redact').catch(() => null);
+        if (!tool) return errorResult('The redact tool is not in this catalog.');
+        const inputs = await redactInputs(tool.manifest, args);
+        const bars = inputs['bars'];
+        if (!Array.isArray(bars) || bars.length === 0) {
+          return errorResult(
+            'No redaction bars given. Pass `instructions` (e.g. "bars=1,40,60,200,24") or a `bars` array — ' +
+            'a redaction with no bars would just re-encode the file.',
+          );
+        }
+        const res = await transform('redact', { base64: file.base64, name: file.name, mime: file.mime }, inputs);
+        const notes = [
+          `Redacted ${file.name ?? 'file'} → ${res.filename} (${res.bytes.length} bytes, tier ${res.tier}).`,
+          `${bars.length} bar${bars.length === 1 ? '' : 's'} applied. The tool rebuilt the file and re-checked its own output; ` +
+          'nothing is returned unless those checks pass.',
+          inputs['resign'] === true
+            ? 'Signed as a redacted derivative (fresh Content Credential, no ingredients).'
+            : 'Not watermarked; no provenance added.',
+          'Covered content is destroyed, not hidden. Invisible whole-image watermarks are unaffected, and this tool cannot detect whether one is present.',
+        ];
+        return {
+          content: [
+            { type: 'text', text: notes.join('\n') },
+            { type: 'resource', resource: { uri: `lolly://redact/${res.filename}`, mimeType: res.mime, blob: Buffer.from(res.bytes).toString('base64') } },
           ],
         };
       }
@@ -411,6 +502,7 @@ export async function serverInstructions(): Promise<string> {
     `Lolly MCP server (engine ${ENGINE_VERSION}) — generate on-brand SUSE creative assets. ` +
     `${tools.length} tools available. Workflow: lolly_list_tools → lolly_describe_tool → lolly_render. ` +
     `Use lolly_build_url for a shareable/editable link without rendering, lolly_transform for on-device file utilities, ` +
+    `lolly_redact to destroy regions of an image/SVG/PDF from one reusable instruction string, ` +
     `and lolly_verify to check a file's Content Credentials (C2PA). ` +
     `Brand assets, tokens, and tool docs are available as resources (lolly://catalog, lolly://assets, lolly://tool/{id}, ` +
     `lolly://tool/{id}/preview, lolly://asset/{id}, lolly://tokens).`

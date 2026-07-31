@@ -15,7 +15,7 @@
 
 import {
   createRuntime, parseUrlState, expandQuery,
-  C2PA_FORMATS, embedC2pa, buildInputModel,
+  C2PA_FORMATS, embedC2pa, buildInputModel, serializeUrlState,
   parseDimension, toPixels,
 } from '@lolly/engine';
 import type { ExportFormat, ExportOpts, Profile, InputFile } from '@lolly-tools/core/host-v1';
@@ -23,6 +23,7 @@ import type { ToolManifest } from '../../../engine/src/loader.ts';
 // Relative imports (not `@lolly-tools/node-shell/...`): this file is inlined into the
 // Vercel MCP bundle, where a bare workspace specifier would dangle (see bridge.ts).
 import { assertRenderOk, RenderIntegrityError } from '../../../packages/node-shell/src/render-integrity.ts';
+import { isDeepFormat } from '../../../packages/node-shell/src/raster.ts';
 import { buildExportC2paOpts } from '../../../packages/node-shell/src/c2pa-opts.ts';
 import { readFile } from 'node:fs/promises';
 import { loadToolCached } from './catalog.ts';
@@ -32,8 +33,13 @@ import { webShellBase, closeWebShell } from './webshell.ts';
 
 export { closeWebShell };
 
-/** Formats the pure engine can produce without a browser engine (NODE_FORMATS). */
-export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
+/** Formats the pure engine can produce without a browser engine (NODE_FORMATS).
+ *  Includes the PRO FLOAT formats exr / .hdr (plans/deeprichpixels.md §6 B3): those
+ *  are the engine's own OpenEXR / Radiance writers over a resvg raster of the tool's
+ *  SVG, so they are browser-free in exactly the sense this set means. They refuse
+ *  loudly (400) without an `hdr=` request — see DEEP_FORMATS in node-shell/raster.ts
+ *  and §10's depth-follows-provenance rule. */
+export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'exr', 'hdr', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
 
 /** Longest raster edge the resvg fast path will produce. A content-sized SVG
  *  (unbounded text → a viewBox that scales with input length) must never dictate
@@ -55,6 +61,9 @@ export interface RenderOpts {
   convertPaths?: boolean;
   password?: string;
   c2pa?: { on: boolean; days: number | null } | null;
+  /** The `hdr=` request (url-mode's HdrSettings dials). Parsed from the query when
+   *  not given explicitly; required by the pro float formats. */
+  hdr?: { peakNits: number; reach: number; lift: number; richness: number } | null;
   profile?: Profile;
   /** Refuse the Tier-B (Chromium) fallback: browser-free-path failures surface
    *  as a RenderError (400) instead of silently escalating to a full browser
@@ -93,6 +102,10 @@ export function mimeForFormat(fmt: string): string {
     case 'emf': return 'image/emf';
     case 'eps': case 'eps-cmyk': return 'application/postscript';
     case 'dxf': return 'image/vnd.dxf';
+    // Pro float formats. `image/x-exr` is the de-facto OpenEXR type (never IANA-
+    // registered); `image/vnd.radiance` IS registered for RGBE.
+    case 'exr': return 'image/x-exr';
+    case 'hdr': return 'image/vnd.radiance';
     case 'tiff': case 'cmyk-tiff': return 'image/tiff';
     case 'ico': return 'image/x-icon';
     case 'zip': return 'application/zip';
@@ -121,16 +134,27 @@ function targetPx(width: number | undefined, unit: string | undefined, dpi: numb
   return dim ? Math.round(toPixels(dim, dpi ?? 300)) : Math.round(width);
 }
 
+/** ExportOpts plus the CLI-local extensions the shared bridge reads (see
+ *  shells/cli/src/bridge.ts's CliExportRenderOpts — MCP drives the same host). */
+type McpExportOpts = ExportOpts & {
+  password?: string;
+  hdr?: { targets?: readonly string[]; peakNits?: number; reach?: number; lift?: number; richness?: number };
+};
+
 /** ExportOpts for runtime.export, mirroring the CLI's unit-qualifier handling. */
 function exportOpts(o: RenderOpts): ExportOpts & { password?: string } {
   const unit = o.unit || 'px';
   const qual = (v: number | undefined): string | number | undefined =>
     (typeof v === 'number' && v > 0 ? (unit !== 'px' ? `${v}${unit}` : v) : undefined);
-  const opts: ExportOpts & { password?: string } = { width: qual(o.width), height: qual(o.height) };
+  const opts: McpExportOpts = { width: qual(o.width), height: qual(o.height) };
   if (unit !== 'px') opts.dpi = o.dpi || 300;
   if (o.background) opts.background = o.background;
   if (o.colorProfile) opts.colorProfile = o.colorProfile;
   if (o.password) opts.password = o.password;
+  // MCP has no brand-palette surface of its own, so the HDR view transform runs with
+  // hdr.ts's includeWhite default only: near-whites get real above-1.0 headroom, brand
+  // colours do not glow the way a CLI/web export with a resolved palette does.
+  if (o.hdr) opts.hdr = { targets: [], peakNits: o.hdr.peakNits, reach: o.hdr.reach, lift: o.hdr.lift, richness: o.hdr.richness };
   return opts;
 }
 
@@ -364,8 +388,11 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   const q = await expandQuery(query);
   const st = parseUrlState(q, tool.manifest);
   const fmt = normFormat(o.format ?? st.format ?? formats[0] ?? 'svg');
-  if (!supported.has(fmt)) {
-    throw new RenderError(`Tool "${toolId}" does not support format "${fmt}". Supported: ${formats.join(', ')}`);
+  // exr / .hdr are admitted for any tool, declared or not — depth is an export
+  // concern and plans/deeprichpixels.md §10 rules out per-tool depth declarations.
+  // The honest gate is at render time (no vector root, or no float source ⇒ refuse).
+  if (!supported.has(fmt) && !isDeepFormat(fmt)) {
+    throw new RenderError(`Tool "${toolId}" does not support format "${fmt}". Supported: ${formats.join(', ')} (plus the pro float formats exr, hdr, which need hdr=1)`);
   }
   // Map jpeg↔jpg to what the engine's ExportFormat expects.
   const exportFmt = fmt === 'jpg' && !formats.includes('jpg') ? 'jpg' : fmt;
@@ -382,6 +409,8 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
     dpi: o.dpi ?? st.dpi ?? undefined,
     password: o.password ?? st.password ?? undefined,
     c2pa: o.c2pa ?? st.c2pa ?? null,
+    // The `hdr=` request, the CLI/MCP's only float pixel source (see exportOpts).
+    hdr: o.hdr ?? st.hdr ?? null,
   };
   const profile = o.profile ?? {};
   const warnings: string[] = [];
@@ -435,13 +464,92 @@ export interface FileArg {
   mime?: string;
 }
 
+/**
+ * A transform hook that cannot run in this Node host says so in its thrown sentence
+ * (redact: "needs a browser canvas" / "not available in this app"). Those exports are
+ * re-run on Tier B rather than failing — a rebuild-the-pixels utility has no honest
+ * jsdom path. A failed verification gate reads nothing like this, so it still fails.
+ */
+export function needsBrowserTier(message: string): boolean {
+  return /browser canvas|not available in this app|needs a browser|requires a browser/i.test(message);
+}
+
+/**
+ * Tier-B transform — drive the real web shell, drop the caller's bytes into the tool's
+ * file picker and capture the file its `[data-export-file]` button downloads. The
+ * tool's own export gate runs in that browser, on these bytes; a thrown gate paints
+ * its sentence on the button and downloads nothing, which surfaces here as a failure.
+ */
+async function transformTierB(
+  toolId: string, fileInputId: string, file: { name: string; mime: string; bytes: Uint8Array }, query: string,
+): Promise<{ bytes: Uint8Array; filename: string }> {
+  const base = await webShellBase();
+  const p = new URLSearchParams(query);
+  p.delete('export');
+  const q = p.toString();
+  const tmpl = process.env.LOLLY_TOOL_URL_TEMPLATE || `${base}/#/tool/{id}?{query}`;
+  const url = tmpl.replace('{id}', encodeURIComponent(toolId)).replace('{query}', q);
+  let browser: import('playwright-core').Browser;
+  try {
+    browser = await getBrowser();
+  } catch (e) {
+    if (e instanceof RenderError) throw e;
+    throw new RenderError(`Tier-B browser unavailable: ${(e as Error).message}`);
+  }
+  const ctx = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: true });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
+    const picker = `.file-picker[data-input-id="${fileInputId}"] input.file-native`;
+    try {
+      await page.waitForSelector(picker, { state: 'attached', timeout: 30_000 });
+    } catch {
+      throw new RenderError(`The web shell showed no file picker for "${fileInputId}" on "${toolId}" — the built shell may predate this tool.`);
+    }
+    await page.setInputFiles(picker, { name: file.name, mimeType: file.mime || 'application/octet-stream', buffer: Buffer.from(file.bytes) });
+    try {
+      await page.waitForSelector('[data-export-file]:not([disabled])', { state: 'visible', timeout: 60_000 });
+    } catch {
+      throw new RenderError(`"${toolId}" never offered its export button for ${file.name} — the tool may have refused this file.`);
+    }
+    // [data-export-wait] means the tool's canvas still owes these inputs work
+    // (redact: page previews rendering, or bars from the instruction string that
+    // have not been snapped to cover against the real page yet). The export
+    // button enables first, so clicking on sight burned bars exactly as supplied.
+    // Best-effort — a stuck page proceeds rather than failing the run.
+    await page.waitForFunction(() => !document.querySelector('[data-export-wait]'), undefined, { timeout: 30_000 })
+      .catch(() => {});
+    const downloadP = page.waitForEvent('download', { timeout: 120_000 })
+      .then(d => ({ kind: 'download' as const, d }), () => ({ kind: 'timeout' as const }));
+    const errorP = page.waitForFunction(() => {
+      const b = document.querySelector('[data-export-file]');
+      return b && b.classList.contains('is-error') ? (b.textContent || '').trim() || 'Export failed.' : null;
+    }, undefined, { timeout: 120_000 })
+      .then(h => h.jsonValue() as Promise<string>)
+      .then(msg => ({ kind: 'error' as const, msg }), () => new Promise<never>(() => {}));
+    await page.click('[data-export-file]');
+    const outcome = await Promise.race([downloadP, errorP]);
+    if (outcome.kind === 'error') throw new RenderError(outcome.msg);
+    if (outcome.kind === 'timeout') throw new RenderError(`"${toolId}" produced no file for ${file.name} within the time limit. Nothing was written.`);
+    const path = await outcome.d.path();
+    if (!path) throw new RenderError(`Tier-B download for "${toolId}" yielded no file.`);
+    const bytes = new Uint8Array(await readFile(path));
+    const filename = outcome.d.suggestedFilename() || file.name;
+    await outcome.d.delete().catch(() => {});
+    return { bytes, filename };
+  } finally {
+    await ctx.close();
+  }
+}
+
 /** Transform path: file in → file out via a tool's exportFile hook. */
 export async function transform(
   toolId: string,
   file: FileArg,
   inputs: Record<string, unknown> = {},
   profile: Profile = {},
-): Promise<{ bytes: Uint8Array; filename: string; mime: string }> {
+  o: { noBrowser?: boolean } = {},
+): Promise<{ bytes: Uint8Array; filename: string; mime: string; tier: string }> {
   const tool = await loadToolCached(toolId);
   if (!tool.manifest.hooks?.exportFile) {
     throw new RenderError(`Tool "${toolId}" is not a transform (file-in/file-out) tool.`);
@@ -461,11 +569,28 @@ export async function transform(
   };
   const values: Record<string, unknown> = { ...inputs, [inputId]: fileRef };
 
-  return withHost(profile, async (_dom, host) => {
-    const runtime = await createRuntime(tool, host, values as never);
-    const res = await (runtime as unknown as { exportFile: () => Promise<{ bytes: Uint8Array; filename?: string }> }).exportFile();
-    const filename = res.filename || `${toolId}-output`;
+  const done = (out: { bytes: Uint8Array; filename?: string }, tier: string) => {
+    const filename = out.filename || `${toolId}-output`;
     const ext = filename.includes('.') ? filename.split('.').pop()! : '';
-    return { bytes: res.bytes, filename, mime: mimeForFormat(ext) };
-  });
+    return { bytes: out.bytes, filename, mime: mimeForFormat(ext), tier };
+  };
+
+  try {
+    return await withHost(profile, async (_dom, host) => {
+      const runtime = await createRuntime(tool, host, values as never);
+      const res = await (runtime as unknown as { exportFile: () => Promise<{ bytes: Uint8Array; filename?: string }> }).exportFile();
+      return done(res, 'A');
+    });
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (!needsBrowserTier(msg)) throw e;
+    if (o.noBrowser) {
+      throw new RenderError(`${msg} That needs the browser tier, which is not available for this request.`);
+    }
+    // Everything except the file itself travels as the tool's URL state — the same
+    // canonical instruction string a share link and the CLI carry.
+    const query = serializeUrlState(buildInputModel(tool.manifest, { initial: inputs as never }));
+    const out = await transformTierB(toolId, inputId, { name: fileRef.name, mime: fileRef.mime, bytes }, query);
+    return done(out, 'B');
+  }
 }
