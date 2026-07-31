@@ -8,7 +8,7 @@
  * describe_tool. See plans/mcp-server.md §3.
  */
 
-import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata } from '@lolly/engine';
+import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS } from '@lolly/engine';
 import type { C2paVerdict, C2paVerdictState } from '@lolly/engine';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 import type { ContentBlock, ToolCallResult } from './protocol.ts';
@@ -47,6 +47,89 @@ const RENDER_ARGS = {
   dpi: { type: 'number', description: 'Raster DPI for physical units (default 300).' },
 };
 
+/**
+ * Export controls that are reserved URL params rather than tool inputs. Split
+ * out of RENDER_ARGS because they also belong on lolly_build_url: a link an
+ * agent hands to a person has to carry the same press setup and provenance
+ * choices the render used, or the two disagree the moment the person opens it.
+ *
+ * These all reach the shell as ordinary query params (serializeUrlState writes
+ * every one of them), which is why nothing downstream had to change to expose
+ * them here — the capability was always in the URL surface, just not in this
+ * schema. `depth` and `hdr` are additionally threaded into RenderOpts because
+ * the browser-free tier exports through the engine directly and never sees the
+ * query.
+ */
+const EXPORT_ARGS = {
+  depth: {
+    type: 'string',
+    enum: ['8', '16', 'float', 'auto'],
+    description: 'Bits per channel. A REQUEST, not a promise: the writers never emit bits the render did not produce, so asking for float on an 8-bit source still returns 8-bit.',
+  },
+  hdr: {
+    type: 'object',
+    description: 'Opt-in HDR raster export (Rec.2100 PQ, or a gain-map JPEG). Presence turns it on; every dial is optional.',
+    properties: {
+      peakNits: { type: 'number', description: 'Peak luminance ceiling in nits (default 1000).' },
+      reach: { type: 'number', description: '0-100: how far down the lightness range the glow reaches (default 45).' },
+      lift: { type: 'number', description: '0-100: how much darks are lifted (default 0 — darks stay dark).' },
+      richness: { type: 'number', description: '0-100: colour-richness focus of the boost (default 40).' },
+    },
+    additionalProperties: false,
+  },
+  bleed: { type: 'string', description: "Print bleed, e.g. '3mm'. Grows the page past the trim so a trim that drifts still lands on artwork." },
+  marks: { type: 'string', description: "Printer's marks to draw, comma-separated (e.g. 'crop,registration,colorbar,info')." },
+  cuts: { type: 'number', description: 'Emit N frames of a timed tool as a contact sheet instead of the single playhead frame.' },
+  imprint: { type: 'boolean', description: "Lolly's own pixel watermark on raster exports. ON by default — pass false to opt out." },
+  durable: { type: 'boolean', description: 'Embed the durable Content Credential that survives re-encoding (opt-in, off by default).' },
+};
+
+type BuildLinkOpts = {
+  format?: string; width?: number; height?: number; unit?: string; dpi?: number;
+} & ReturnType<typeof exportSettings>;
+
+/** The reserved-param half of a render request, in the shape serializeUrlState
+ *  and RenderOpts both want. One reader, so the link and the file agree. */
+function exportSettings(args: Record<string, unknown>): {
+  depth?: 8 | 16 | 'float' | 'auto';
+  hdr?: { peakNits: number; reach: number; lift: number; richness: number } | null;
+  bleed?: string | null;
+  marks?: string | null;
+  cuts?: number | null;
+  imprint?: boolean;
+  durable?: boolean;
+} {
+  const rawDepth = args['depth'] == null ? null : String(args['depth']);
+  const depth = rawDepth === '8' ? 8 : rawDepth === '16' ? 16
+    : rawDepth === 'float' ? 'float' : rawDepth === 'auto' ? 'auto' : undefined;
+
+  // Presence is the switch; each dial falls back to the engine's own default so
+  // `hdr: {}` means "HDR, your call on the look" rather than four zeroes.
+  const h = args['hdr'];
+  const hdr = h && typeof h === 'object' ? (() => {
+    const o = h as Record<string, unknown>;
+    const num = (v: unknown, d: number): number => (typeof v === 'number' && isFinite(v) ? v : d);
+    return {
+      peakNits: num(o['peakNits'], HDR_DEFAULTS.peakNits),
+      reach: num(o['reach'], HDR_DEFAULTS.reach),
+      lift: num(o['lift'], HDR_DEFAULTS.lift),
+      richness: num(o['richness'], HDR_DEFAULTS.richness),
+    };
+  })() : undefined;
+
+  const cuts = typeof args['cuts'] === 'number' && args['cuts'] > 1 ? args['cuts'] : undefined;
+  return {
+    ...(depth !== undefined ? { depth } : {}),
+    ...(hdr ? { hdr } : {}),
+    ...(args['bleed'] ? { bleed: String(args['bleed']) } : {}),
+    ...(args['marks'] ? { marks: String(args['marks']) } : {}),
+    ...(cuts !== undefined ? { cuts } : {}),
+    // Only an explicit false is an opt-out; absent means the default (on).
+    ...(args['imprint'] === false ? { imprint: false } : {}),
+    ...(args['durable'] === true ? { durable: true } : {}),
+  };
+}
+
 export const TOOL_DEFS: McpToolDef[] = [
   {
     name: 'lolly_list_tools',
@@ -78,7 +161,7 @@ export const TOOL_DEFS: McpToolDef[] = [
     description: 'Build a shareable, editable lolly.tools link (and a raw render URL) for a tool + inputs, without rendering.',
     inputSchema: {
       type: 'object',
-      properties: { toolId: RENDER_ARGS.toolId, inputs: RENDER_ARGS.inputs, format: RENDER_ARGS.format, width: RENDER_ARGS.width, height: RENDER_ARGS.height, unit: RENDER_ARGS.unit, dpi: RENDER_ARGS.dpi },
+      properties: { toolId: RENDER_ARGS.toolId, inputs: RENDER_ARGS.inputs, format: RENDER_ARGS.format, width: RENDER_ARGS.width, height: RENDER_ARGS.height, unit: RENDER_ARGS.unit, dpi: RENDER_ARGS.dpi, ...EXPORT_ARGS },
       required: ['toolId'],
       additionalProperties: false,
     },
@@ -90,6 +173,7 @@ export const TOOL_DEFS: McpToolDef[] = [
       type: 'object',
       properties: {
         ...RENDER_ARGS,
+        ...EXPORT_ARGS,
         transparentBg: { type: 'boolean', description: 'Remove the background fill (alpha formats).' },
         convertPaths: { type: 'boolean', description: 'Outline text to vector paths in SVG/PDF (default on).' },
         background: { type: 'string', description: 'Override background colour.' },
@@ -181,7 +265,7 @@ function errorResult(message: string): ToolCallResult {
 }
 
 /** Build the shareable query + URLs for a tool + inputs. */
-function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: { format?: string; width?: number; height?: number; unit?: string; dpi?: number }): { query: string; editUrl: string; renderUrl: string | null } {
+function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: BuildLinkOpts): { query: string; editUrl: string; renderUrl: string | null } {
   const model = buildInputModel(manifest, { initial: inputs as never });
   const query = serializeUrlState(model, {
     format: o.format ?? null,
@@ -189,6 +273,19 @@ function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: 
     height: o.height ?? null,
     unit: o.unit ?? null,
     dpi: o.dpi ?? null,
+    // The press setup and provenance choices ride the link too, so opening it
+    // reproduces the file rather than a differently-configured cousin. They
+    // also carry the browser tier's whole configuration: exportUrl() strips the
+    // params it sets itself and passes the rest through untouched.
+    bleed: o.bleed ?? null,
+    marks: o.marks ?? null,
+    cuts: o.cuts ?? null,
+    depth: o.depth ?? null,
+    // `hdr` serialises as a presence flag (`hdr=1`); the dials only exist on the
+    // engine-side opts, so the link carries "HDR on" and the render carries how.
+    hdr: o.hdr ? '1' : null,
+    imprint: o.imprint,
+    durable: o.durable,
   });
   const editUrl = query ? `${WEB_BASE}/#/tool/${manifest.id}?${query}` : `${WEB_BASE}/#/tool/${manifest.id}`;
   const renderUrl = buildEmbedUrl({ toolId: manifest.id, format: o.format ?? manifest.render.formats[0], query });
@@ -357,7 +454,16 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const tool = await loadToolCached(toolId).catch(() => null);
         if (!tool) return errorResult(`Tool not found: ${toolId}.`);
         const inputs = (args['inputs'] as Record<string, unknown>) ?? {};
-        const links = buildLinks(tool.manifest, inputs, args as never);
+        // Read through the same door lolly_render uses, so a link built here
+        // and a file rendered there from the same arguments agree.
+        const links = buildLinks(tool.manifest, inputs, {
+          format: args['format'] as string | undefined,
+          width: args['width'] as number | undefined,
+          height: args['height'] as number | undefined,
+          unit: args['unit'] as string | undefined,
+          dpi: args['dpi'] as number | undefined,
+          ...exportSettings(args),
+        });
         return textOnly(`Editable link:\n${links.editUrl}\n\nRaw render URL:\n${links.renderUrl ?? '(unavailable)'}`);
       }
 
@@ -380,6 +486,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
           convertPaths: args['convertPaths'] as boolean | undefined,
           password: args['password'] as string | undefined,
           c2pa: c2paSetting(args['c2pa']),
+          ...exportSettings(args),
         };
         const links = buildLinks(tool.manifest, inputs, opts);
         const result = await render(toolId, links.query, opts);

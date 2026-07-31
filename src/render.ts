@@ -23,7 +23,7 @@ import type { ToolManifest } from '../../../engine/src/loader.ts';
 // Relative imports (not `@lolly-tools/node-shell/...`): this file is inlined into the
 // Vercel MCP bundle, where a bare workspace specifier would dangle (see bridge.ts).
 import { assertRenderOk, RenderIntegrityError } from '../../../packages/node-shell/src/render-integrity.ts';
-import { isDeepFormat } from '../../../packages/node-shell/src/raster.ts';
+import { isDeepFormat, DeepSourceError } from '../../../packages/node-shell/src/raster.ts';
 import { buildExportC2paOpts } from '../../../packages/node-shell/src/c2pa-opts.ts';
 import { readFile } from 'node:fs/promises';
 import { loadToolCached } from './catalog.ts';
@@ -65,6 +65,9 @@ export interface RenderOpts {
    *  not given explicitly; required by the pro float formats. */
   hdr?: { peakNits: number; reach: number; lift: number; richness: number } | null;
   profile?: Profile;
+  /** Requested export bit depth (the `depth` reserved param). Threaded so an MCP
+   *  render of the same URL produces the same file the CLI does. */
+  depth?: 8 | 16 | 'float' | 'auto';
   /** Refuse the Tier-B (Chromium) fallback: browser-free-path failures surface
    *  as a RenderError (400) instead of silently escalating to a full browser
    *  render. Always set by the public unauthenticated GET endpoint, whose
@@ -151,6 +154,10 @@ function exportOpts(o: RenderOpts): ExportOpts & { password?: string } {
   if (o.background) opts.background = o.background;
   if (o.colorProfile) opts.colorProfile = o.colorProfile;
   if (o.password) opts.password = o.password;
+  // depth is a REQUEST, honoured only where provenance supports it (the writers
+  // enforce that). Dropping it here made the same URL render differently on MCP
+  // than on the CLI - depth=float silently came back as 16-bit HALF.
+  if (o.depth && o.depth !== 'auto') opts.depth = o.depth;
   // MCP has no brand-palette surface of its own, so the HDR view transform runs with
   // hdr.ts's includeWhite default only: near-whites get real above-1.0 headroom, brand
   // colours do not glow the way a CLI/web export with a resolved palette does.
@@ -172,7 +179,17 @@ async function renderTierA(
     const canvas = dom.window.document.getElementById('canvas');
     if (!canvas) throw new RenderError('render canvas missing');
     canvas.innerHTML = runtime.getHydrated();
-    const blob = await runtime.export(canvas as unknown as Element, fmt as ExportFormat, opts);
+    let blob: Blob;
+    try {
+      blob = await runtime.export(canvas as unknown as Element, fmt as ExportFormat, opts);
+    } catch (e) {
+      // A deep-format refusal ("this render has no float pixels behind it") is a
+      // CLIENT-side answer about the request, not a server fault. Without this it
+      // reached the GET route as a 500 "Render failed" and the caller could not
+      // tell a policy refusal from a crash.
+      if (e instanceof DeepSourceError) throw new RenderError(e.message);
+      throw e;
+    }
     const bytes = new Uint8Array(await blob.arrayBuffer());
     // Honest failure: a lifecycle hook that threw means the canvas (and these bytes)
     // are blank — surface the hook's message instead of handing the agent a
@@ -411,6 +428,7 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
     c2pa: o.c2pa ?? st.c2pa ?? null,
     // The `hdr=` request, the CLI/MCP's only float pixel source (see exportOpts).
     hdr: o.hdr ?? st.hdr ?? null,
+    depth: o.depth ?? st.depth ?? undefined,
   };
   const profile = o.profile ?? {};
   const warnings: string[] = [];
