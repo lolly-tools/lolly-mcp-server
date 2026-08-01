@@ -568,13 +568,14 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const file = args['file'] as { base64?: string; name?: string; mime?: string } | undefined;
         if (!file?.base64) return errorResult('file.base64 is required.');
         const bytes = Uint8Array.from(Buffer.from(file.base64, 'base64'));
-        // The vendored C2PA trust list ONLY — same anchor policy as the CLI's
-        // flagless `lolly validate`, but NOT the web /valid view, which also
-        // pins the Lolly CA root (so a Lolly-CA-signed export reads as a
-        // CA-verified identity there and plain intact here). The split is
-        // explicit in the engine's defaultTrustAnchors (engine/src/
-        // c2pa-verdict.ts) and flagged in plans/maintainability-2026-07-18.md.
-        const report = await verifyC2pa(bytes, { trustAnchors: defaultTrustAnchors({ includeLollyRoot: false }) });
+        // The Lolly CA root + the vendored C2PA trust list — the SAME anchor set
+        // the web /valid view and `lolly validate` use (plans/cli-ga-contract.md
+        // §12 O1, Andy 2026-08-01). It used to be vendored-only here, so a
+        // Lolly-CA-signed export read as a CA-verified identity on the web and
+        // plain intact through this tool: one word, two meanings, depending on
+        // which surface asked. This tool has no argv, so there is no
+        // `--no-default-anchors` twin; the bare-trust check is a CLI affordance.
+        const report = await verifyC2pa(bytes, { trustAnchors: defaultTrustAnchors({ includeLollyRoot: true }) });
         let metadata: ReturnType<typeof extractFileMetadata> | null = null;
         try { metadata = extractFileMetadata(bytes); } catch { /* best-effort — the verdict stands alone */ }
         const { verdict, headline, resolved } = verifyVerdict(report);
