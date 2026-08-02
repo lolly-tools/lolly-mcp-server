@@ -10,25 +10,20 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Relative import (not `@lolly-tools/node-shell/...`): this file is inlined into the
+// serverless bundle, same as render.ts's node-shell imports.
+import { repoRoot } from '../../../packages/node-shell/src/repo-root.ts';
 
-// Resolve the repo root holding tools/ + catalog/. In the monorepo this is three
-// levels up from this file. In a bundled serverless function (Vercel) the source
-// layout is gone but the data dirs are preserved under the task cwd via
-// vercel.json `includeFiles`, so fall back to process.cwd(). LOLLY_ROOT overrides
-// both (useful in containers where the data lives at a fixed path).
-function resolveRoot(): string {
-  const marker = (root: string): boolean => existsSync(join(root, 'catalog', 'tools', 'index.json'));
-  if (process.env.LOLLY_ROOT && marker(process.env.LOLLY_ROOT)) return process.env.LOLLY_ROOT;
-  const rel = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-  if (marker(rel)) return rel;
-  if (marker(process.cwd())) return process.cwd();
-  return process.env.LOLLY_ROOT || rel;
-}
-
-export const REPO_ROOT = resolveRoot();
+// The repo root holding tools/ + catalog/ comes from the ONE shared resolver
+// (node-shell/repo-root): LOLLY_ROOT, then a marker walk UP from the module dir —
+// the form that actually survives this bundle, whose flattened import.meta.url sits
+// under api/, two levels below the deployed root — then cwd (Vercel preserves the
+// data dirs there via `includeFiles`), then the monorepo-relative guess. This file
+// used to carry a weaker twin with a fixed `../../..` and no walk-up; node-shell's
+// header was literally written to supersede it, but this call site was never rewired.
+export const REPO_ROOT = repoRoot();
 export const TOOLS_DIR = join(REPO_ROOT, 'tools');
 export const CATALOG_INDEX = join(REPO_ROOT, 'catalog', 'tools', 'index.json');
 export const ASSET_INDEX = join(REPO_ROOT, 'catalog', 'assets', 'index.json');

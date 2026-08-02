@@ -13,6 +13,7 @@ import type { C2paVerdict } from '@lolly/engine';
 // Relative import (not `@lolly-tools/node-shell/...`): this file is inlined into the
 // serverless bundle, same as render.ts's node-shell imports.
 import { VERDICT_SLUGS } from '../../../packages/node-shell/src/verdict-slugs.ts';
+import { cleanControlChars, verdictFacts, verdictChecks } from '../../../packages/node-shell/src/verdict-report.ts';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
 import type { ContentBlock, ToolCallResult } from './protocol.ts';
 import { listTools, loadToolCached, loadIndex } from './catalog.ts';
@@ -329,7 +330,7 @@ function exampleLooks(m: ToolManifest, cap: number): { label?: string; inputs?: 
 // Every claim/signer string is attacker-controlled bytes from the file being checked.
 // Strip control characters so a crafted manifest can't smuggle escape sequences into
 // the agent-facing report (same hygiene as shells/cli/src/validate.ts).
-const clean = (v: unknown) => String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
+const clean = cleanControlChars;
 
 type VerifyReport = Awaited<ReturnType<typeof verifyC2pa>>;
 
@@ -360,29 +361,10 @@ function verifyText(name: string, report: VerifyReport, headline: string): strin
       ? "  (fields below are the CA-verified signer's own claim)"
       : '  (fields below are self-asserted by whoever signed the file)');
   }
-  if (report.claim) {
-    const c = report.claim;
-    const s: Partial<NonNullable<VerifyReport['signer']>> = report.signer || {};
-    const env: Record<string, string | number | boolean> = report.environment || {};
-    const signedAt = c.actions?.find(a => a.when)?.when;
-    const generator = c.generatorInfo?.name
-      ? `${c.generatorInfo.name}${c.generatorInfo.version ? ' ' + c.generatorInfo.version : ''}`
-      : c.claimGenerator;
-    const id = report.signer?.identity;
-    const facts: Array<[string, unknown]> = [
-      ['Title', c.title],
-      ['Identity', report.trusted && id
-        && `${id.email || s.commonName}${id.issuer ? ` — verified by ${id.issuer}` : ''}`],
-      ['Tool', env.tool],
-      ['Produced by', report.author && `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}`],
-      [report.delivered ? 'Delivered by' : 'Made with', generator],
-      ['Signed', signedAt],
-      ['Where', [env.surface, env.engine, env.os].filter(Boolean).join(' · ')],
-      ['Signer', s.commonName], ['Issuer', s.organization && `${s.organization}${s.selfSigned ? ' (self-signed)' : ''}`],
-      ['Algorithm', s.alg], ['Manifest', c.manifestLabel],
-    ];
-    for (const [k, v] of facts) if (v) lines.push(`  ${k.padEnd(11)} ${clean(v)}`);
-  }
+  // The claim facts come from the SHARED node-shell renderer (verdict-report.ts),
+  // already scrubbed and filtered, so this server and `lolly validate` cannot drift
+  // on the same file. The MCP-only "Edit history" block below is appended on top.
+  for (const [k, v] of verdictFacts(report)) lines.push(`  ${k.padEnd(11)} ${v}`);
   const history = report.history ?? [];
   if (history.length) {
     lines.push('Edit history (incl. ingredient/parent manifests):');
@@ -391,9 +373,9 @@ function verifyText(name: string, report: VerifyReport, headline: string): strin
       lines.push(`  – ${clean(h.action)}${h.when ? ` @ ${clean(h.when)}` : ''}${who ? ` (${clean(who)})` : ''}${h.description ? ` — ${clean(h.description)}` : ''}`);
     }
   }
-  for (const chk of report.checks) {
-    const mark = chk.ok ? '✓' : chk.code === 'signingCredential.untrusted' ? 'ℹ' : '✕';
-    lines.push(`  ${mark} ${clean(chk.code)} — ${clean(chk.explanation)}`);
+  for (const chk of verdictChecks(report)) {
+    const mark = chk.mark === 'ok' ? '✓' : chk.mark === 'info' ? 'ℹ' : '✕';
+    lines.push(`  ${mark} ${chk.code} — ${chk.explanation}`);
   }
   return lines.join('\n');
 }
@@ -575,6 +557,10 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         // plain intact through this tool: one word, two meanings, depending on
         // which surface asked. This tool has no argv, so there is no
         // `--no-default-anchors` twin; the bare-trust check is a CLI affordance.
+        // Deliberately NOT reading LOLLY_TRUST_ANCHOR or a caller-supplied pin here,
+        // unlike the two terminal shells: this server is a hosted, multi-tenant
+        // surface, where a server-side env anchor would silently vouch for one
+        // tenant's roots on every other tenant's file. The built-in set only.
         const report = await verifyC2pa(bytes, { trustAnchors: defaultTrustAnchors({ includeLollyRoot: true }) });
         let metadata: ReturnType<typeof extractFileMetadata> | null = null;
         try { metadata = extractFileMetadata(bytes); } catch { /* best-effort — the verdict stands alone */ }
