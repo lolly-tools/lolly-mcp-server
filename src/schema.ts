@@ -6,7 +6,7 @@
  * the runtime accepts — including the synthetic `transparentBg` / `convertPaths`
  * export toggles the engine injects and resolved defaults. Then map each
  * InputModelItem by type. Keep in lock-step with engine/src/inputs.ts InputType
- * and schemas/tool.schema.json. See plans/mcp-server.md §4.
+ * and schemas/tool.schema.json. See plans/77-mcp-server.md §4.
  */
 
 import { buildInputModel } from '@lolly/engine';

@@ -4,7 +4,7 @@
  *
  * The server reads tool source (tools/<id>/) and the generated catalog from the
  * monorepo, exactly as the CLI does — REPO_ROOT is resolved relative to this
- * file. When this package is split into its own repo (see plans/mcp-server.md),
+ * file. When this package is split into its own repo (see plans/77-mcp-server.md),
  * only these constants + how tool files are fetched need to change: point
  * fetchToolFile at a vendored snapshot or a remote catalog sync.
  */
@@ -31,7 +31,7 @@ export const FONTS_DIR = join(REPO_ROOT, 'catalog', 'fonts');
 
 // Scoped Chromium install for the Tier-B (headless-browser) render path. Anchored
 // to THIS package's root — not the monorepo — so it travels with the repo split
-// (plans/mcp-server.md). `npm run install:browser` downloads Chromium here; the
+// (plans/77-mcp-server.md). `npm run install:browser` downloads Chromium here; the
 // installer and render.ts point PLAYWRIGHT_BROWSERS_PATH at it. An explicit
 // PLAYWRIGHT_BROWSERS_PATH (container system cache, prebuilt image) always wins.
 export const BROWSERS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '.browsers');

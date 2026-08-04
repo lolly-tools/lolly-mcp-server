@@ -10,7 +10,7 @@
  * This is the container/worker deployment path (owns the Tier-B browser pool).
  * The same gateway is wrapped by the Vercel function (vercel-entry.ts) for the
  * serverless "alongside Lolly" deployment — see services/ca for that shape and
- * plans/mcp-server.md §5.
+ * plans/77-mcp-server.md §5.
  */
 
 import { createServer } from 'node:http';

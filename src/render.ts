@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The render core — the boundary that makes deployment topology a deploy-time
- * choice (plans/mcp-server.md §5). Two tiers, mirroring the engine/shell split:
+ * choice (plans/77-mcp-server.md §5). Two tiers, mirroring the engine/shell split:
  *
  *   Tier A (in-process): svg / emf / eps / data+text formats. jsdom + the engine,
  *     via the headless host. No browser.
@@ -35,7 +35,7 @@ import { webShellBase, closeWebShell } from './webshell.ts';
 export { closeWebShell };
 
 /** Formats the pure engine can produce without a browser engine (NODE_FORMATS).
- *  Includes the PRO FLOAT formats exr / .hdr (plans/deeprichpixels.md §6 B3): those
+ *  Includes the PRO FLOAT formats exr / .hdr (plans/61-deeprichpixels.md §6 B3): those
  *  are the engine's own OpenEXR / Radiance writers over a resvg raster of the tool's
  *  SVG, so they are browser-free in exactly the sense this set means. They refuse
  *  loudly (400) without an `hdr=` request — see DEEP_FORMATS in node-shell/raster.ts
@@ -407,7 +407,7 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   const st = parseUrlState(q, tool.manifest);
   const fmt = normFormat(o.format ?? st.format ?? formats[0] ?? 'svg');
   // exr / .hdr are admitted for any tool, declared or not — depth is an export
-  // concern and plans/deeprichpixels.md §10 rules out per-tool depth declarations.
+  // concern and plans/61-deeprichpixels.md §10 rules out per-tool depth declarations.
   // The honest gate is at render time (no vector root, or no float source ⇒ refuse).
   if (!supported.has(fmt) && !isDeepFormat(fmt)) {
     throw new RenderError(`Tool "${toolId}" does not support format "${fmt}". Supported: ${formats.join(', ')} (plus the pro float formats exr, hdr, which need hdr=1)`);

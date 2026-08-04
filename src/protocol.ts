@@ -7,7 +7,7 @@
  * subset — initialize, tools/*, resources/*, prompts/*, ping — dispatched in
  * server.ts. Adopting @modelcontextprotocol/sdk later (for SSE streaming /
  * session management) is a drop-in: the handlers are already pure functions of a
- * request. See plans/mcp-server.md.
+ * request. See plans/77-mcp-server.md.
  */
 
 export interface JsonRpcRequest {

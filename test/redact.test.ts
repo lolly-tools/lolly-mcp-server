@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lolly_redact — the agent-facing half of "redaction instructions" (plans/redact-tool.md §3).
+ * lolly_redact — the agent-facing half of "redaction instructions" (plans/37-redact-tool.md §3).
  *
  * One canonical instruction string has to mean the same thing in a share link, in
  * `lolly redact --bars=…`, and in this call, so these cases pin the parse and the

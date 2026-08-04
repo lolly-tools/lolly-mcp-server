@@ -2,7 +2,7 @@
 /**
  * Tier-B needs a real browser driving a real Lolly web shell — that's the only
  * place the full export pipeline (HTML-layout raster, pdf, video, CMYK, marks)
- * exists. This module resolves that shell, two ways (plans/mcp-server.md §5):
+ * exists. This module resolves that shell, two ways (plans/77-mcp-server.md §5):
  *
  *   • LOLLY_WEB_BASE set  → a shell is already running somewhere; use it as-is.
  *   • otherwise (self-contained, the recommended container topology) → serve the

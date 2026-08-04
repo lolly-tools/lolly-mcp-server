@@ -2,7 +2,7 @@
 /**
  * MCP resources — read-only brand context so an agent can be on-brand instead of
  * guessing: the catalog, per-tool docs, brand assets, and design tokens.
- * See plans/mcp-server.md §3.2.
+ * See plans/77-mcp-server.md §3.2.
  */
 
 import { readFile } from 'node:fs/promises';

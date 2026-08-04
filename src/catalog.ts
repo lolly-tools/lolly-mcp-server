@@ -5,7 +5,7 @@
  *
  * The index carries enough to list tools (id/name/formats/dims/status/…) but
  * NOT input specs — those live only in each tool.json, so describe/render call
- * loadToolCached(). See plans/mcp-server.md §7.
+ * loadToolCached(). See plans/77-mcp-server.md §7.
  */
 
 import { readFile } from 'node:fs/promises';

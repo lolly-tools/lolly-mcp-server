@@ -2,7 +2,7 @@
 /**
  * Install Chromium for the MCP server's Tier-B (headless-browser) render path,
  * SCOPED to this package (services/mcp/.browsers) so the browser travels when
- * this package splits into its own repo (plans/mcp-server.md).
+ * this package splits into its own repo (plans/77-mcp-server.md).
  *
  * It drives the `playwright-core` we already depend on — NOT the full `playwright`
  * package — so a plain `npm install` never downloads a browser (keeps the web /
