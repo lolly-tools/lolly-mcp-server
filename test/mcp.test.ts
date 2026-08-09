@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dispatch } from '../src/server.ts';
+import { headTokensAsset } from '../src/resources.ts';
 import type { JsonRpcResponse } from '../src/protocol.ts';
 
 let nextId = 1;
@@ -70,4 +71,37 @@ test('render qr-code to png (Tier A + resvg, no browser)', async () => {
   const img = r.content.find(c => c.type === 'image');
   assert.ok(img && img.mimeType === 'image/png', 'expected a png image block');
   assert.ok((img!.data ?? '').length > 100, 'png should have bytes');
+});
+
+// ── lolly://tokens serves the design system's HEAD (plans/97 §6a) ────────────
+
+test('lolly://tokens serves the catalog design system', async () => {
+  const read = await rpc('resources/read', { uri: 'lolly://tokens' });
+  const content = (read['contents'] as { mimeType?: string; text?: string }[])[0]!;
+  assert.equal(content.mimeType, 'application/json');
+  const doc = JSON.parse(content.text!) as { colors?: unknown[]; note?: string };
+  // Either a real palette or the explicit "no tokens asset" note — both are the
+  // shape an agent parses. What must never happen is a throw.
+  assert.ok(Array.isArray(doc.colors), 'expected a colors array');
+});
+
+test('a published version never gets picked as the design system', async () => {
+  // The rule the resource applies, over the two-asset index the real catalog
+  // cannot supply today. `user/tokens/brand/jupiter` is a snapshot of the head,
+  // so serving it as "the brand" would hand an agent last month's colours; the
+  // predicate is the engine's, shared with the web bridge and the CLI.
+  const head = { id: 'acme/tokens/brand', type: 'tokens' };
+  const version = { id: 'acme/tokens/brand/jupiter', type: 'tokens' };
+  const logo = { id: 'acme/logo/mark', type: 'vector' };
+
+  assert.deepEqual(headTokensAsset([head, version, logo]), head);
+  // Index order must not decide it: build:catalog sorts by id, so a version can
+  // legitimately come first.
+  assert.deepEqual(headTokensAsset([version, head, logo]), head);
+  // An unrelated second design system is NOT a version of the first, so the old
+  // first-wins answer stands — the rule narrows nothing it did not have to.
+  const other = { id: 'other/tokens/brand', type: 'tokens' };
+  assert.deepEqual(headTokensAsset([other, head]), other);
+  // And a catalog with no tokens asset still reads as "none", not as a throw.
+  assert.equal(headTokensAsset([logo]), undefined);
 });

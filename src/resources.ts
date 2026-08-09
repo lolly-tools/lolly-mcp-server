@@ -7,7 +7,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createTokenSet } from '@lolly/engine';
+import { createTokenSet, pickHeadAssetId } from '@lolly/engine';
 import { ASSET_INDEX, REPO_ROOT } from './paths.ts';
 import { loadIndex, loadToolCached } from './catalog.ts';
 import { toolInputSchema } from './schema.ts';
@@ -23,7 +23,7 @@ export interface ResourceContent {
 export const RESOURCES = [
   { uri: 'lolly://catalog', name: 'Tool catalog', description: 'The full generated Lolly tool index.', mimeType: 'application/json' },
   { uri: 'lolly://assets', name: 'Brand asset listing', description: 'Every catalog asset id with its type, name, tags and formats — the ids lolly://asset/{id} resolves.', mimeType: 'application/json' },
-  { uri: 'lolly://tokens', name: 'Brand design tokens', description: 'On-brand colour swatches (DTCG) with names and CMYK.', mimeType: 'application/json' },
+  { uri: 'lolly://tokens', name: 'Brand design tokens', description: "On-brand colour swatches (DTCG) with names and CMYK, from the design system's edit head — never one of its published versions.", mimeType: 'application/json' },
 ];
 
 export const RESOURCE_TEMPLATES = [
@@ -36,9 +36,29 @@ interface AssetIndex {
   assets: { id: string; type: string; name?: string; tags?: string[]; formats: { format: string; url: string }[] }[];
 }
 
+/**
+ * The catalog's HEAD design system: the one `type:'tokens'` asset that is not a
+ * published version of another (plans/97 §6a).
+ *
+ * A version ships as a child id (`<head>/<slug>`), so the old `.find(a => a.type
+ * === 'tokens')` could hand an agent a frozen snapshot as "the brand" purely on
+ * index order. The rule comes from the engine, not from here: the web bridge and
+ * the CLI apply the same predicate, and an agent that reads different tokens from
+ * the ones a render uses is worse than one that reads none.
+ *
+ * Exported for the MCP suite — the fixture this needs is a two-asset index, which
+ * the real catalog (one tokens asset, and thus byte-identical to the old `.find`)
+ * cannot supply.
+ */
+export function headTokensAsset<T extends { id: string; type: string }>(assets: readonly T[]): T | undefined {
+  const tokens = assets.filter(a => a.type === 'tokens');
+  const headId = pickHeadAssetId(tokens.map(a => a.id));
+  return tokens.find(a => a.id === headId);
+}
+
 async function tokensResource(uri: string): Promise<ResourceContent> {
   const idx = JSON.parse(await readFile(ASSET_INDEX, 'utf8')) as AssetIndex;
-  const tokenAsset = idx.assets.find(a => a.type === 'tokens');
+  const tokenAsset = headTokensAsset(idx.assets);
   if (!tokenAsset) return { uri, mimeType: 'application/json', text: JSON.stringify({ colors: [], note: 'No tokens asset in catalog.' }) };
   const doc = JSON.parse(await readFile(join(REPO_ROOT, tokenAsset.formats[0]!.url.replace(/^\//, '')), 'utf8'));
   const set = createTokenSet(doc);
