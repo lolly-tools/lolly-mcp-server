@@ -12,7 +12,7 @@
  * produces. If the two drift, an agent hands a person a link that opens
  * something other than what the agent saw.
  *
- * Browser-free throughout — nothing here needs Chromium.
+ * Browser-free throughout. Nothing here needs Chromium.
  */
 
 import { test } from 'node:test';

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MPL-2.0
 /**
- * stdio MCP transport — for local clients (Claude Desktop, Claude Code, the MCP
+ * stdio MCP transport. For local clients (Claude Desktop, Claude Code, the MCP
  * inspector). Reads newline-delimited JSON-RPC from stdin, writes responses to
  * stdout; all logging goes to stderr (stdout is the protocol channel).
  *

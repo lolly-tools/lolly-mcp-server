@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The public GET render endpoint — `GET /tool/<id>.<ext>?<query>`.
+ * The public GET render endpoint - `GET /tool/<id>.<ext>?<query>`.
  *
  * Answers the exact canonical embed-URL shape `buildEmbedUrl` mints
  * (engine/src/tool-url.ts) with real bytes: a vercel.json rewrite sends
- * `/tool/:id.:ext` to the MCP function and the gateway routes GET/HEAD here — so
+ * `/tool/:id.:ext` to the MCP function and the gateway routes GET/HEAD here. So
  * the embed URLs the Share dialog and `lolly_build_url` already produce become
  * live `<img src>`s in READMEs, wikis and dashboards.
  *
- * Deliberate v1 policy (a posture decision, not plumbing — see docs/mcp.md and
- * docs/privacy.md, which describe this surface to users):
+ * Deliberate v1 policy (a design decision, not an implementation detail - see
+ * docs/mcp.md and docs/privacy.md, which describe this surface to users):
  *
  *  - PUBLIC and unauthenticated. It renders only public tool + catalog data (the
  *    same bundled tools/ dir the MCP tools read); no accounts, no cookies, no
  *    user state, nothing stored per request.
- *  - Official/community tools only. Anything else — unknown id, experimental
- *    status — is the SAME 404, so the response never leaks catalog existence
+ *  - Official/community tools only. Anything else (unknown id, experimental
+ *    status) gets the SAME 404, so the response never leaks catalog existence
  *    semantics (a 403 would confirm the tool exists).
  *  - Browser-free formats only: TIER_A plus the resvg PNG fast-path for
  *    SVG-native tools (render.ts). Everything else is an honest 400.
@@ -28,8 +28,8 @@
  *    lolly.tools origin when navigated to directly (as an `<img src>` the header
  *    is moot; this guards direct navigation).
  *  - Rate limiting is a best-effort, per-instance in-memory sliding window per
- *    client IP. Serverless instances share no state, so this is only a backstop —
- *    real enforcement for a public deployment belongs to platform WAF rules
+ *    client IP. Serverless instances share no state, so this is only a backstop.
+ *    Real enforcement for a public deployment belongs to platform WAF rules
  *    (e.g. Vercel Firewall), not application code.
  *  - Self-hosters can switch the route off entirely: LOLLY_DISABLE_RENDER_GET=1
  *    makes every /tool/<id>.<ext> URL return 404.
@@ -60,7 +60,7 @@ export function matchRenderGetPath(path: string): { toolId: string; ext: string 
 // MAX_URL parity with parseEmbedUrl/buildEmbedUrl (engine/src/tool-url.ts): a
 // query longer than the longest mintable embed URL is refused outright.
 const MAX_QUERY = 4096;
-// Sane output bound — caps the resvg raster allocation (physical units convert
+// Sane output bound - caps the resvg raster allocation (physical units convert
 // to pixels at `dpi` before the check, so 10000mm can't sneak in a huge raster).
 const MAX_EDGE_PX = 10_000;
 const MAX_DPI = 1200;
@@ -172,7 +172,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
 
   // Renders are deterministic for their URL (c2pa forced off below), so a strong
   // ETag over (engine + catalog build + canonical URL) is honest. Catalog or
-  // engine updates roll every ETag — over-invalidation, never staleness.
+  // engine updates roll every ETag - over-invalidation, never staleness.
   const etag = `"${createHash('sha256')
     .update(`${ENGINE_VERSION}|${index.version}|${index.generatedAt}|${match.toolId}.${fmt}?${expanded}`)
     .digest('hex').slice(0, 32)}"`;
@@ -190,7 +190,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
 
   let result;
   try {
-    // c2pa OFF (never from the query): see the module comment — determinism is
+    // c2pa OFF (never from the query): see the module comment - determinism is
     // what makes the ETag + CDN cache correct. format comes from the path
     // extension, which is authoritative over any `format=` query param.
     // noBrowser keeps the "browser-free formats only" policy honest: without it a

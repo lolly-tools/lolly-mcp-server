@@ -12,7 +12,7 @@
  *   POST …/mcp  (or /api/mcp)                       → JSON-RPC dispatch  (server.ts)
  *
  * Routing is by path SUFFIX (…endsWith('/register') etc.), so it is robust to
- * however Vercel presents the path after the well-known rewrites — and to the
+ * however Vercel presents the path after the well-known rewrites, and to the
  * standalone `/mcp` mount. The JSON-RPC endpoint is gated by oauth.isAuthorized;
  * a 401 carries `WWW-Authenticate` pointing at the resource metadata, which is
  * what makes a spec client (claude.ai) begin the OAuth dance.
@@ -35,7 +35,7 @@ const CORS: Record<string, string> = {
   'access-control-expose-headers': 'WWW-Authenticate',
 };
 
-const MAX_BODY = 32 * 1024 * 1024; // 32 MB — room for base64 file uploads to transform tools.
+const MAX_BODY = 32 * 1024 * 1024; // 32 MB - room for base64 file uploads to transform tools.
 
 function readBody(req: IncomingMessage): Promise<string> {
   // Vercel's Node helper may have pre-parsed the body; prefer the raw stream but
@@ -80,9 +80,10 @@ const formToObject = (raw: string): Record<string, string> =>
 export function createGateway(env: NodeJS.ProcessEnv = process.env): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   // Is the MCP configured to actually run on THIS deployment? It needs a shared
   // token / signing secret (or an explicit anonymous opt-in). A deployment with
-  // none — e.g. the blank-brand site (lolly.art), which carries no LOLLY_MCP_*
-  // secrets — should not advertise an OAuth/discovery/registration surface that
-  // can only dead-end; 404 every route so the endpoint cleanly doesn't exist.
+  // none, for example the blank-brand site (lolly.art), which carries no
+  // LOLLY_MCP_* secrets, should not advertise an OAuth/discovery/registration
+  // surface that can only dead-end. Return 404 for every route so the endpoint
+  // cleanly doesn't exist.
   const mcpEnabled = !!signingSecret(env) || env.LOLLY_MCP_ALLOW_ANONYMOUS === '1';
   return async (req, res) => {
     const method = req.method || 'GET';

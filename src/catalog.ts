@@ -4,7 +4,7 @@
  * per-tool manifest (loaded via the engine's loadTool, for describe/render).
  *
  * The index carries enough to list tools (id/name/formats/dims/status/…) but
- * NOT input specs — those live only in each tool.json, so describe/render call
+ * not input specs. Those live only in each tool.json, so describe/render call
  * loadToolCached(). See plans/77-mcp-server.md §7.
  */
 

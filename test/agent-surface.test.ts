@@ -2,7 +2,7 @@
 /**
  * The Wave-1 agent surface: lolly_verify, catalog-derived prompts, the
  * lolly://assets listing + per-tool preview resources, and the dxf Tier-A path.
- * Driven through dispatch() like mcp.test.ts — browser-free throughout.
+ * Driven through dispatch() like mcp.test.ts. Browser-free throughout.
  */
 
 import { test } from 'node:test';

@@ -3,7 +3,7 @@
  * Generate a JSON Schema for a tool's `inputs` object from its manifest.
  *
  * We run the engine's buildInputModel first so the schema reflects EXACTLY what
- * the runtime accepts — including the synthetic `transparentBg` / `convertPaths`
+ * the runtime accepts - including the synthetic `transparentBg` / `convertPaths`
  * export toggles the engine injects and resolved defaults. Then map each
  * InputModelItem by type. Keep in lock-step with engine/src/inputs.ts InputType
  * and schemas/tool.schema.json. See plans/77-mcp-server.md §4.
@@ -100,7 +100,7 @@ function schemaForInput(item: InputModelItem): JsonSchema {
 
 /**
  * The JSON Schema for a tool's `inputs` argument. `file`-typed inputs are always
- * omitted here — binary content is never URL-expressible and, for transform
+ * omitted here - binary content is never URL-expressible and, for transform
  * tools, arrives via the top-level `file` argument of lolly_transform.
  */
 export function toolInputSchema(manifest: ToolManifest): JsonSchema {

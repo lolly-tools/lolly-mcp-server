@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The public GET render endpoint (src/render-get.ts) — the scoped-v1 policy:
+ * The public GET render endpoint (src/render-get.ts) - the scoped-v1 policy:
  * Tier-A + resvg-png formats, official/community tools only, c2pa off, cacheable
  * (ETag/304), best-effort per-IP rate limit, LOLLY_DISABLE_RENDER_GET kill switch.
  * Driven through renderGet() directly (browser-free), plus one pass through the

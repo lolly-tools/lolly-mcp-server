@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The MCP meta-tools: list / describe / build_url / render / transform / verify —
- * plus the catalog-derived prompts (server.ts prompts/*).
+ * The MCP meta-tools: list / describe / build_url / render / transform / verify.
+ * Plus the catalog-derived prompts (server.ts prompts/*).
  *
- * A small fixed surface (compact — scales to the whole catalog without flooding
- * a client's tool picker); per-tool input schemas are returned as data by
- * describe_tool. See plans/77-mcp-server.md §3.
+ * The surface is small and fixed. It stays compact and scales to the whole
+ * catalog without flooding a client's tool picker. Per-tool input schemas are
+ * returned as data by describe_tool. See plans/77-mcp-server.md §3.
  */
 
 import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS } from '@lolly/engine';
@@ -58,8 +58,8 @@ const RENDER_ARGS = {
  * choices the render used, or the two disagree the moment the person opens it.
  *
  * These all reach the shell as ordinary query params (serializeUrlState writes
- * every one of them), which is why nothing downstream had to change to expose
- * them here — the capability was always in the URL surface, just not in this
+ * every one of them). That is why nothing downstream had to change to expose
+ * them here: the capability was always in the URL surface, just not in this
  * schema. `depth` and `hdr` are additionally threaded into RenderOpts because
  * the browser-free tier exports through the engine directly and never sees the
  * query.
@@ -298,7 +298,7 @@ function buildLinks(manifest: ToolManifest, inputs: Record<string, unknown>, o: 
 
 /**
  * Turn a lolly_redact call into the tool's inputs. The instruction string is the
- * canonical one — a lolly.tools redact link or just its query — so the identical
+ * canonical one - a lolly.tools redact link or just its query - so the identical
  * string works as a share link, as `lolly redact --bars=…`, and here. Explicit
  * `bars`/`quantise`/`grayscale`/`resign` arguments win over the string, and the
  * file-typed input never comes from it (the bytes are the `file` argument).
@@ -337,10 +337,10 @@ type VerifyReport = Awaited<ReturnType<typeof verifyC2pa>>;
 /**
  * The verdict slug + headline for each engine-resolved state now lives in the shared
  * Node package (packages/node-shell/src/verdict-slugs.ts) so this server and
- * `lolly validate --json` cannot answer the same question in two vocabularies — the
- * lesson the forked verdict LADDER already taught. Two quirks of this surface survive
- * the move, because they are properties of the shared table itself:
- *  • no partsMadeWithLolly headline (unlike the CLI, which elevates that flag) — a
+ * `lolly validate --json` cannot answer the same question in two vocabularies. This
+ * is the lesson the forked verdict LADDER already taught. Two quirks of this surface
+ * survive the move, because they are properties of the shared table itself:
+ *  • no partsMadeWithLolly headline (unlike the CLI, which elevates that flag): a
  *    parts file keeps reading 'credential-intact';
  *  • no separate "verified identity" slug (the web /valid has a "Verified" hero): the
  *    'trusted' state also reads 'credential-intact', with the identity carried in the
@@ -352,7 +352,7 @@ function verifyVerdict(report: VerifyReport): { verdict: string; headline: strin
   return { ...VERDICT_SLUGS[resolved.state], resolved };
 }
 
-/** Human-readable verify report — the same facts `lolly validate` prints. */
+/** Human-readable verify report - the same facts `lolly validate` prints. */
 function verifyText(name: string, report: VerifyReport, headline: string): string {
   const lines = [`${name}${report.format ? `  [${report.format}]` : ''}`, headline];
   if (report.reason && report.state !== 'invalid') lines.push(`  ${clean(report.reason)}`);
@@ -550,7 +550,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const file = args['file'] as { base64?: string; name?: string; mime?: string } | undefined;
         if (!file?.base64) return errorResult('file.base64 is required.');
         const bytes = Uint8Array.from(Buffer.from(file.base64, 'base64'));
-        // The Lolly CA root + the vendored C2PA trust list — the SAME anchor set
+        // The Lolly CA root + the vendored C2PA trust list - the SAME anchor set
         // the web /valid view and `lolly validate` use (plans/73-cli-ga-contract.md
         // §12 O1, Andy 2026-08-01). It used to be vendored-only here, so a
         // Lolly-CA-signed export read as a CA-verified identity on the web and
@@ -563,13 +563,13 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         // tenant's roots on every other tenant's file. The built-in set only.
         const report = await verifyC2pa(bytes, { trustAnchors: defaultTrustAnchors({ includeLollyRoot: true }) });
         let metadata: ReturnType<typeof extractFileMetadata> | null = null;
-        try { metadata = extractFileMetadata(bytes); } catch { /* best-effort — the verdict stands alone */ }
+        try { metadata = extractFileMetadata(bytes); } catch { /* best-effort - the verdict stands alone */ }
         const { verdict, headline, resolved } = verifyVerdict(report);
         return {
           content: [
             { type: 'text', text: verifyText(file.name ?? 'file', report, headline) },
-            // `verdict` (legacy slug) and `report` are the compatibility surface —
-            // shapes unchanged; `resolved` is ADDITIVE: the engine's semantic
+            // `verdict` (legacy slug) and `report` are the compatibility surface.
+            // Shapes unchanged; `resolved` is ADDITIVE: the engine's semantic
             // verdict (state/tone + the flags that drove it) from resolveVerdict.
             { type: 'text', text: JSON.stringify({ verdict, resolved, report, metadata }, null, 2) },
           ],
@@ -597,10 +597,10 @@ export async function serverInstructions(): Promise<string> {
   );
 }
 
-// ── Prompts — catalog-derived guided invocations (server.ts prompts/*) ────────
+// ── Prompts - catalog-derived guided invocations (server.ts prompts/*) ────────
 // One prompt per featured tool plus a generic guided workflow, all derived from
-// the live catalog at request time (no hardcoded tool lists — new tools get
-// prompts for free when they're featured).
+// the live catalog at request time (no hardcoded tool lists). New tools get
+// prompts for free when they're featured.
 
 export interface McpPromptArg { name: string; description?: string; required?: boolean }
 export interface McpPromptDef { name: string; description?: string; arguments?: McpPromptArg[] }
@@ -624,7 +624,7 @@ async function toolPromptDef(toolId: string): Promise<McpPromptDef> {
   const props = (schema['properties'] ?? {}) as Record<string, { description?: string }>;
   const required = new Set((schema['required'] as string[] | undefined) ?? []);
   // Required inputs first (stable within groups), capped so the prompt stays a
-  // small form — the message itself points at lolly_describe_tool for the rest.
+  // small form. The message itself points at lolly_describe_tool for the rest.
   const ids = Object.keys(props).sort((a, b) => Number(required.has(b)) - Number(required.has(a)));
   const promptArgs: McpPromptArg[] = ids.slice(0, 10).map(pid => ({
     name: pid,
@@ -673,7 +673,7 @@ export async function getPrompt(name: string, args: Record<string, string> = {})
   if (!TOOL_ID_RE.test(name)) return null;
   const tool = await loadToolCached(name).catch(() => null);
   if (!tool) return null;
-  // Only featured tools are LISTED, but any valid tool id resolves — so a client's
+  // Only featured tools are LISTED, but any valid tool id resolves. A client's
   // pinned prompt keeps working if curation changes.
   const m = tool.manifest;
   const looks = exampleLooks(m, 3);

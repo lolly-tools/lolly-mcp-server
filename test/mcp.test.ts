@@ -80,7 +80,7 @@ test('lolly://tokens serves the catalog design system', async () => {
   const content = (read['contents'] as { mimeType?: string; text?: string }[])[0]!;
   assert.equal(content.mimeType, 'application/json');
   const doc = JSON.parse(content.text!) as { colors?: unknown[]; note?: string };
-  // Either a real palette or the explicit "no tokens asset" note — both are the
+  // Either a real palette or the explicit "no tokens asset" note. Both are the
   // shape an agent parses. What must never happen is a throw.
   assert.ok(Array.isArray(doc.colors), 'expected a colors array');
 });
@@ -99,7 +99,7 @@ test('a published version never gets picked as the design system', async () => {
   // legitimately come first.
   assert.deepEqual(headTokensAsset([version, head, logo]), head);
   // An unrelated second design system is NOT a version of the first, so the old
-  // first-wins answer stands — the rule narrows nothing it did not have to.
+  // first-wins answer stands. The rule narrows nothing it did not have to.
   const other = { id: 'other/tokens/brand', type: 'tokens' };
   assert.deepEqual(headTokensAsset([other, head]), other);
   // And a catalog with no tokens asset still reads as "none", not as a throw.

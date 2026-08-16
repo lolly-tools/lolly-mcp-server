@@ -4,7 +4,7 @@
  *
  * We hand-roll the wire protocol (no SDK dependency) to keep this service
  * zero-new-deps, mirroring services/ca. The MCP methods we implement are a
- * subset — initialize, tools/*, resources/*, prompts/*, ping — dispatched in
+ * subset - initialize, tools/*, resources/*, prompts/*, ping - dispatched in
  * server.ts. Adopting @modelcontextprotocol/sdk later (for SSE streaming /
  * session management) is a drop-in: the handlers are already pure functions of a
  * request. See plans/77-mcp-server.md.

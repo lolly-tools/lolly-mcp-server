@@ -4,8 +4,8 @@
  * SCOPED to this package (services/mcp/.browsers) so the browser travels when
  * this package splits into its own repo (plans/77-mcp-server.md).
  *
- * It drives the `playwright-core` we already depend on — NOT the full `playwright`
- * package — so a plain `npm install` never downloads a browser (keeps the web /
+ * It drives the `playwright-core` we already depend on, not the full `playwright`
+ * package, so a plain `npm install` never downloads a browser (keeps the web /
  * Vercel install light). This is the one explicit step that pulls Chromium.
  *
  *   npm run install:browser                    # Chromium → ./.browsers
@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 import { BROWSERS_DIR } from '../src/paths.ts';
 
 const require = createRequire(import.meta.url);
-// Resolve the playwright-core CLI via its package.json (always resolvable) — cli.js
+// Resolve the playwright-core CLI via its package.json (always resolvable). cli.js
 // is its sibling. Avoids depending on subpath `exports` for './cli.js'.
 const cli = join(dirname(require.resolve('playwright-core/package.json')), 'cli.js');
 

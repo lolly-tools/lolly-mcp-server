@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * MCP resources — read-only brand context so an agent can be on-brand instead of
+ * MCP resources - read-only brand context so an agent can be on-brand instead of
  * guessing: the catalog, per-tool docs, brand assets, and design tokens.
  * See plans/77-mcp-server.md §3.2.
  */
@@ -46,7 +46,7 @@ interface AssetIndex {
  * the CLI apply the same predicate, and an agent that reads different tokens from
  * the ones a render uses is worse than one that reads none.
  *
- * Exported for the MCP suite — the fixture this needs is a two-asset index, which
+ * Exported for the MCP suite - the fixture this needs is a two-asset index, which
  * the real catalog (one tokens asset, and thus byte-identical to the old `.find`)
  * cannot supply.
  */

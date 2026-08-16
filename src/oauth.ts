@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * A minimal, STATELESS OAuth 2.1 authorization server — just enough for a remote
- * MCP client (claude.ai's "custom connector", Claude Code, any spec client) to
- * discover, register, and obtain a bearer token for the `/api/mcp` endpoint.
+ * A minimal, stateless OAuth 2.1 authorization server. It does just enough for a
+ * remote MCP client (claude.ai's "custom connector", Claude Code, any spec
+ * client) to discover, register, and obtain a bearer token for the `/api/mcp`
+ * endpoint.
  *
  * WHY STATELESS: Vercel functions share no memory or disk, so there is no client
  * registry, code store, or token store. Instead every artefact is an HMAC-signed
  * value (sign.ts): the `client_id` encodes its own redirect URIs, the auth `code`
- * encodes the PKCE challenge + target, the access/refresh tokens encode scope +
- * expiry. Verification needs only the shared secret. (Trade-off: an auth code
- * can't be hard "one-time" without a store — we bound it to a 60 s TTL + PKCE, the
- * standard mitigation. See README "Not yet".)
+ * encodes the PKCE challenge and target, and the access/refresh tokens encode
+ * scope and expiry. Verification needs only the shared secret. Trade-off: an
+ * auth code cannot be hard "one-time" without a store. We bound it to a 60 s
+ * TTL plus PKCE, the standard mitigation. See README "Not yet".
  *
  * AUTH MODEL (passphrase): the consent page asks the operator for the value of
- * `LOLLY_MCP_TOKEN` — the same shared secret that already gates the endpoint. So
+ * `LOLLY_MCP_TOKEN`, the same shared secret that already gates the endpoint. So
  * OAuth here is a spec-compliant wrapper around the existing gate: anyone who
  * knows the token can connect claude.ai; the MCP endpoint keeps accepting the raw
  * token too, so Claude Code is unaffected. Per-user identity (GitHub) is a
- * documented later upgrade — the CA already has the OIDC code to graft on.
+ * documented later upgrade. The CA already has the OIDC code to graft on.
  *
  * Endpoints (mounted by gateway.ts):
  *   GET  /.well-known/oauth-protected-resource   → RFC 9728 resource metadata
@@ -40,7 +41,7 @@ export interface Result {
 
 const ACCESS_TTL = 3600;              // 1 h
 const REFRESH_TTL = 30 * 24 * 3600;   // 30 d
-const CODE_TTL = 60;                  // 1 min — bounds the stateless (non-one-time) code
+const CODE_TTL = 60;                  // 1 min - bounds the stateless (non-one-time) code
 const SCOPE = 'mcp';
 
 interface ClientPayload { t: 'client'; ru: string[]; iat: number }
@@ -223,7 +224,7 @@ async function issueTokens(scope: string, aud: string | undefined, secret: strin
 // ─── endpoint access-token validation ─────────────────────────────────────────
 
 /**
- * Gate for POST /api/mcp. Accepts EITHER the raw shared token (LOLLY_MCP_TOKEN —
+ * Gate for POST /api/mcp. Accepts EITHER the raw shared token (LOLLY_MCP_TOKEN,
  * Claude Code / curl, unchanged) OR an OAuth access token minted above. If no
  * token is configured at all, the endpoint is open (dev/self-host default).
  */

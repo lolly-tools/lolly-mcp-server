@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * MCP request dispatch — transport-agnostic. Both the stdio (bin/lolly-mcp.ts)
+ * MCP request dispatch - transport-agnostic. Both the stdio (bin/lolly-mcp.ts)
  * and Streamable-HTTP (http.ts) transports funnel JSON-RPC messages through
  * dispatch(). Returns null for notifications (no response expected).
  */

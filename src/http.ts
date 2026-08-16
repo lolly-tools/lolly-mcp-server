@@ -9,7 +9,7 @@
  * Run standalone:  node services/mcp/src/http.ts   (PORT, default 8790)
  * This is the container/worker deployment path (owns the Tier-B browser pool).
  * The same gateway is wrapped by the Vercel function (vercel-entry.ts) for the
- * serverless "alongside Lolly" deployment — see services/ca for that shape and
+ * serverless "alongside Lolly" deployment. See services/ca for that shape and
  * plans/77-mcp-server.md §5.
  */
 

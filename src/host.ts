@@ -2,14 +2,14 @@
 /**
  * The headless HostV1 for server-side rendering.
  *
- * We reuse the CLI's Node bridge (createCliBridge) — the canonical "same engine,
- * different transport" host — rather than duplicating asset resolution / export
+ * We reuse the CLI's Node bridge (createCliBridge), the canonical "same engine,
+ * different transport" host, rather than duplicating asset resolution / export
  * logic. Two adaptations for a server context:
  *   1. log() is redirected to stderr. In stdio transport, stdout IS the JSON-RPC
  *      channel, so the CLI bridge's stdout logging would corrupt it.
  *   2. jsdom globals are set per render and restored, and renders are serialized
- *      through a mutex (jsdom mutates shared globalThis) — safe, if not maximally
- *      concurrent. Worker-thread pooling is a later optimization (roadmap).
+ *      through a mutex (jsdom mutates shared globalThis). This is safe, but not
+ *      maximally concurrent. Worker-thread pooling is a later optimization (roadmap).
  *
  * NOTE (roadmap): depending on shells/cli couples a service to a shell. Before
  * splitting this package out, extract createCliBridge into a shared node-host
@@ -48,7 +48,7 @@ export function withHost<T>(profile: Profile, fn: (dom: Jsdom, host: HostV1) => 
     g['Element'] = (dom.window as unknown as { Element: unknown }).Element;
     try {
       const host = await createCliBridge({ dom: dom as never, profile });
-      // Redirect logging to stderr (never stdout — the stdio protocol channel).
+      // Redirect logging to stderr (never stdout - it is the stdio protocol channel).
       (host as { log: HostV1['log'] }).log = (level, msg, ctx) => {
         process.stderr.write(`[mcp:${level}] ${msg}${ctx ? ' ' + safeJson(ctx) : ''}\n`);
       };

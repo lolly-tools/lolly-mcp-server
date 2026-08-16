@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tier-B needs a real browser driving a real Lolly web shell — that's the only
+ * Tier-B needs a real browser driving a real Lolly web shell. That is the only
  * place the full export pipeline (HTML-layout raster, pdf, video, CMYK, marks)
  * exists. This module resolves that shell, two ways (plans/77-mcp-server.md §5):
  *
@@ -11,7 +11,7 @@
  *     are still in the monorepo; a split-out repo/container ships a prebuilt dist
  *     and points LOLLY_WEB_DIST at it (no build step, works air-gapped).
  *
- * The served base is a lazy singleton — built/served once per process, reused by
+ * The served base is a lazy singleton: built/served once per process, reused by
  * every render, torn down by closeWebShell().
  */
 

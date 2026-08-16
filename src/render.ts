@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The render core — the boundary that makes deployment topology a deploy-time
+ * The render core - the boundary that makes deployment topology a deploy-time
  * choice (plans/77-mcp-server.md §5). Two tiers, mirroring the engine/shell split:
  *
  *   Tier A (in-process): svg / emf / eps / data+text formats. jsdom + the engine,
@@ -38,7 +38,7 @@ export { closeWebShell };
  *  Includes the PRO FLOAT formats exr / .hdr (plans/61-deeprichpixels.md §6 B3): those
  *  are the engine's own OpenEXR / Radiance writers over a resvg raster of the tool's
  *  SVG, so they are browser-free in exactly the sense this set means. They refuse
- *  loudly (400) without an `hdr=` request — see DEEP_FORMATS in node-shell/raster.ts
+ *  loudly (400) without an `hdr=` request - see DEEP_FORMATS in node-shell/raster.ts
  *  and §10's depth-follows-provenance rule. */
 export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'exr', 'hdr', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
 
@@ -46,7 +46,7 @@ export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'exr', 'h
  *  (unbounded text → a viewBox that scales with input length) must never dictate
  *  the raster allocation: `fitTo: original` would honour a multi-billion-pixel
  *  intrinsic size verbatim and OOM the process. Mirrors render-get.ts
- *  MAX_EDGE_PX, which only validates the width/height QUERY params — this cap
+ *  MAX_EDGE_PX, which only validates the width/height QUERY params - this cap
  *  is what actually bounds the pixels. */
 const MAX_RASTER_EDGE_PX = 10_000;
 
@@ -139,7 +139,7 @@ function targetPx(width: number | undefined, unit: string | undefined, dpi: numb
 }
 
 /** ExportOpts plus the CLI-local extensions the shared bridge reads (see
- *  shells/cli/src/bridge.ts's CliExportRenderOpts — MCP drives the same host). */
+ *  shells/cli/src/bridge.ts's CliExportRenderOpts - MCP drives the same host). */
 type McpExportOpts = ExportOpts & {
   password?: string;
   hdr?: { targets?: readonly string[]; peakNits?: number; reach?: number; lift?: number; richness?: number };
@@ -193,7 +193,7 @@ async function renderTierA(
     }
     const bytes = new Uint8Array(await blob.arrayBuffer());
     // Honest failure: a lifecycle hook that threw means the canvas (and these bytes)
-    // are blank — surface the hook's message instead of handing the agent a
+    // are blank. Surface the hook's message instead of handing the agent a
     // valid-but-empty file. Tier A only: Tier B re-renders in a real web shell whose
     // host has the full capability set, so these hookErrors don't describe its bytes.
     try {
@@ -211,7 +211,7 @@ async function renderTierA(
  *  `width` and of the SVG's intrinsic size (see the constant's comment). */
 async function svgToPng(svg: string, width: number | undefined, background: string | undefined): Promise<Uint8Array> {
   const { Resvg } = await import('@resvg/resvg-js');
-  // Cheap parse-only probe for the intrinsic size (viewBox/width/height) — no raster.
+  // Cheap parse-only probe for the intrinsic size (viewBox/width/height) - no raster.
   const probe = new Resvg(svg, { font: { loadSystemFonts: false } });
   const iw = probe.width, ih = probe.height;
   if (!(iw > 0) || !(ih > 0)) throw new RenderError('SVG has no rasterisable size');
@@ -219,7 +219,7 @@ async function svgToPng(svg: string, width: number | undefined, background: stri
   const wantScale = width && width > 0 ? width / iw : 1;
   const scale = Math.min(wantScale, capScale);
   // Beyond MAX_RASTER_EDGE_PX:1 aspect the capped raster's short edge drops
-  // below one pixel — resvg refuses a zero-size target, so refuse honestly here.
+  // below one pixel. resvg refuses a zero-size target, so refuse honestly here.
   if (iw * scale < 1 || ih * scale < 1) {
     throw new RenderError('SVG aspect ratio is too extreme to rasterise within the size cap — export svg instead.');
   }
@@ -246,7 +246,7 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
       const channel = process.env.LOLLY_BROWSER_CHANNEL; // e.g. 'chrome'
       const executablePath = process.env.LOLLY_BROWSER_PATH;
       // Resolve Chromium from this package's scoped install (services/mcp/.browsers,
-      // via `npm run install:browser`) unless the deployment pins its own browser —
+      // via `npm run install:browser`) unless the deployment pins its own browser:
       // an installed OS channel, an explicit binary, or a preset browsers path.
       if (!channel && !executablePath) {
         process.env.PLAYWRIGHT_BROWSERS_PATH ??= BROWSERS_DIR;
@@ -269,7 +269,7 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
         const msg = (err as Error).message || '';
         if (/executable doesn't exist|Executable doesn't exist|please run/i.test(msg)) {
           // On a hosted/serverless deployment (no browser by design) the dev "install a
-          // browser" advice is noise — steer the caller to the browser-free formats that
+          // browser" advice is noise. Steer the caller to the browser-free formats that
           // DO render here. Keep the actionable install hint for local / self-host dev.
           const hosted = !!process.env.VERCEL || process.env.LOLLY_MCP_HOSTED === '1';
           throw new RenderError(
@@ -296,7 +296,7 @@ export async function closeBrowser(): Promise<void> {
   if (b) { try { (await b).close(); } catch { /* ignore */ } }
 }
 
-/** Reserved params we set ourselves on the export URL — cleared from the inbound
+/** Reserved params we set ourselves on the export URL - cleared from the inbound
  *  query first so the caller's opts win. `c2pa` is dropped because render() stamps
  *  Content Credentials AFTER the browser returns (one path for both tiers). */
 const EXPORT_URL_RESERVED = ['format', 'export', 'copy', 'width', 'w', 'height', 'h', 'unit', 'dpi', 'password', 'profile', 'c2pa', 'preview', 'options'];
@@ -313,7 +313,7 @@ function exportUrl(base: string, toolId: string, query: string, fmt: string, o: 
   // CMYK press condition for pdf-cmyk / cmyk-tiff (the app's `profile` reserved param).
   if (o.colorProfile) p.set('profile', o.colorProfile);
   // Standard-PDF password is applied by the app during export (clear-text in URL by
-  // design — same as a share link); strong locks aren't a Tier-B concern here.
+  // design, same as a share link); strong locks aren't a Tier-B concern here.
   if (o.password && (fmt === 'pdf')) p.set('password', o.password);
   p.set('export', '1'); // presence flag → immediate download on load
   const q = p.toString();
@@ -330,10 +330,10 @@ function exportTimeoutMs(fmt: string): number {
 }
 
 /**
- * Tier B render — the full browser export pipeline (M1). Serves/points at a real
+ * Tier B render - the full browser export pipeline (M1). Serves/points at a real
  * Lolly web shell (webShellBase: local built dist, or LOLLY_WEB_BASE), drives the
  * scoped Chromium to the tool with `?…&format=<fmt>&export`, and captures the bytes
- * the app's own export path downloads — so HTML-layout raster, pdf (incl. CMYK +
+ * the app's own export path downloads. So HTML-layout raster, pdf (incl. CMYK +
  * marks), and video all render exactly as a user's Download would. No canvas
  * screenshot: this is the real export, honouring the full param contract.
  */
@@ -394,7 +394,7 @@ async function stampC2pa(bytes: Uint8Array, fmt: string, manifest: ToolManifest,
 }
 
 /**
- * Render a tool to bytes. `query` is a plain (or packed `z=`) URL query — the
+ * Render a tool to bytes. `query` is a plain (or packed `z=`) URL query - the
  * shared param contract. Explicit opts override anything parsed from the query.
  */
 export async function render(toolId: string, query: string, o: RenderOpts = {}): Promise<RenderResult> {
@@ -406,7 +406,7 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   const q = await expandQuery(query);
   const st = parseUrlState(q, tool.manifest);
   const fmt = normFormat(o.format ?? st.format ?? formats[0] ?? 'svg');
-  // exr / .hdr are admitted for any tool, declared or not — depth is an export
+  // exr / .hdr are admitted for any tool, declared or not - depth is an export
   // concern and plans/61-deeprichpixels.md §10 rules out per-tool depth declarations.
   // The honest gate is at render time (no vector root, or no float source ⇒ refuse).
   if (!supported.has(fmt) && !isDeepFormat(fmt)) {
@@ -452,7 +452,7 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
       out = { bytes: png, mime: 'image/png', tier: 'A(resvg)' };
     } catch (e) {
       if (o.noBrowser) {
-        // No silent Tier-B escalation on the browser-free contract — surface the
+        // No silent Tier-B escalation on the browser-free contract. Surface the
         // fast path's own failure (hook error, resvg refusal) as the answer.
         throw e instanceof RenderError ? e : new RenderError(`SVG→PNG render failed: ${(e as Error).message}`);
       }
@@ -487,7 +487,7 @@ export interface FileArg {
  * A transform hook that cannot run in this Node host says so with a typed sentinel
  * (`err.code === 'NEEDS_BROWSER'`) or, for already-shipped tools, in its thrown sentence
  * (redact: "needs a browser canvas" / "isn't available in this app"). Those exports are
- * re-run on Tier B rather than failing — a rebuild-the-pixels utility has no honest
+ * re-run on Tier B rather than failing - a rebuild-the-pixels utility has no honest
  * jsdom path. A failed verification gate reads like neither, so it still fails.
  *
  * Re-exported, NOT reimplemented: this file used to carry its own prose-only copy that
@@ -497,7 +497,7 @@ export interface FileArg {
 export { needsBrowserTier };
 
 /**
- * Tier-B transform — drive the real web shell, drop the caller's bytes into the tool's
+ * Tier-B transform - drive the real web shell, drop the caller's bytes into the tool's
  * file picker and capture the file its `[data-export-file]` button downloads. The
  * tool's own export gate runs in that browser, on these bytes; a thrown gate paints
  * its sentence on the button and downloads nothing, which surfaces here as a failure.
@@ -538,7 +538,7 @@ async function transformTierB(
     // (redact: page previews rendering, or bars from the instruction string that
     // have not been snapped to cover against the real page yet). The export
     // button enables first, so clicking on sight burned bars exactly as supplied.
-    // Best-effort — a stuck page proceeds rather than failing the run.
+    // Best-effort - a stuck page proceeds rather than failing the run.
     await page.waitForFunction(() => !document.querySelector('[data-export-wait]'), undefined, { timeout: 30_000 })
       .catch(() => {});
     const downloadP = page.waitForEvent('download', { timeout: 120_000 })
@@ -609,7 +609,7 @@ export async function transform(
     if (o.noBrowser) {
       throw new RenderError(`${msg} That needs the browser tier, which is not available for this request.`);
     }
-    // Everything except the file itself travels as the tool's URL state — the same
+    // Everything except the file itself travels as the tool's URL state - the same
     // canonical instruction string a share link and the CLI carry.
     const query = serializeUrlState(buildInputModel(tool.manifest, { initial: inputs as never }));
     const out = await transformTierB(toolId, inputId, { name: fileRef.name, mime: fileRef.mime, bytes }, query);
