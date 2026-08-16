@@ -2,7 +2,7 @@
 /**
  * MCP resources - read-only brand context so an agent can be on-brand instead of
  * guessing: the catalog, per-tool docs, brand assets, and design tokens.
- * See plans/77-mcp-server.md §3.2.
+ * See plans/77-mcp-server.md section 3.2.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -38,7 +38,7 @@ interface AssetIndex {
 
 /**
  * The catalog's HEAD design system: the one `type:'tokens'` asset that is not a
- * published version of another (plans/97 §6a).
+ * published version of another (plans/97 section 6a).
  *
  * A version ships as a child id (`<head>/<slug>`), so the old `.find(a => a.type
  * === 'tokens')` could hand an agent a frozen snapshot as "the brand" purely on

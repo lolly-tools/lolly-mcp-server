@@ -5,7 +5,7 @@
  *
  * The surface is small and fixed. It stays compact and scales to the whole
  * catalog without flooding a client's tool picker. Per-tool input schemas are
- * returned as data by describe_tool. See plans/77-mcp-server.md §3.
+ * returned as data by describe_tool. See plans/77-mcp-server.md section 3.
  */
 
 import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS } from '@lolly/engine';
@@ -552,7 +552,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const bytes = Uint8Array.from(Buffer.from(file.base64, 'base64'));
         // The Lolly CA root + the vendored C2PA trust list - the SAME anchor set
         // the web /valid view and `lolly validate` use (plans/73-cli-ga-contract.md
-        // §12 O1, Andy 2026-08-01). It used to be vendored-only here, so a
+        // section 12 O1, Andy 2026-08-01). It used to be vendored-only here, so a
         // Lolly-CA-signed export read as a CA-verified identity on the web and
         // plain intact through this tool: one word, two meanings, depending on
         // which surface asked. This tool has no argv, so there is no

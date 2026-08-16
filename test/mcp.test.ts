@@ -73,7 +73,7 @@ test('render qr-code to png (Tier A + resvg, no browser)', async () => {
   assert.ok((img!.data ?? '').length > 100, 'png should have bytes');
 });
 
-// ── lolly://tokens serves the design system's HEAD (plans/97 §6a) ────────────
+// ── lolly://tokens serves the design system's HEAD (plans/97 section 6a) ────────────
 
 test('lolly://tokens serves the catalog design system', async () => {
   const read = await rpc('resources/read', { uri: 'lolly://tokens' });

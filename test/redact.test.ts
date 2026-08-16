@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lolly_redact - the agent-facing half of "redaction instructions" (plans/37-redact-tool.md §3).
+ * lolly_redact - the agent-facing half of "redaction instructions" (plans/37-redact-tool.md section 3).
  *
  * A share link, `lolly redact --bars=…`, and this call must all parse one
  * canonical instruction string the same way. These tests check that parse and
@@ -8,7 +8,7 @@
  * export rebuilds real pixels and runs in the Tier-B web shell, and node:test
  * must never launch that shell. So no test here calls transform() with bars.
  * The Tier-B path is verified by hand against the built shell (see the plan's
- * §3 notes).
+ * section 3 notes).
  */
 
 import { test } from 'node:test';

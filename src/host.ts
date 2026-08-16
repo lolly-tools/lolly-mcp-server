@@ -13,7 +13,7 @@
  *
  * NOTE (roadmap): depending on shells/cli couples a service to a shell. Before
  * splitting this package out, extract createCliBridge into a shared node-host
- * module. See plans/77-mcp-server.md §7 + §13.
+ * module. See plans/77-mcp-server.md section 7 + section 13.
  */
 
 import { createCliBridge } from '../../../shells/cli/src/bridge.ts';
