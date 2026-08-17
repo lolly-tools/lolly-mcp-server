@@ -254,7 +254,7 @@ function page(title: string, inner: string): string {
 <style>
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100vh; display:grid; place-items:center;
-    font:15px/1.5 -apple-system,system-ui,'Segoe UI',Roboto,sans-serif;
+    font:15px/1.5 SUSE,-apple-system,system-ui,'Segoe UI',Roboto,sans-serif;
     background:#f4f7f5; color:#10231f; }
   @media (prefers-color-scheme:dark){ body{ background:#0c1512; color:#e7f0ec; } .card{ background:#12201b; } input{ background:#0c1512; color:inherit; } }
   .card { width:min(420px,92vw); background:#fff; border-radius:16px; padding:28px 26px;
