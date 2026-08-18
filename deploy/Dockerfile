@@ -32,6 +32,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY engine               engine
 COPY services/mcp         services/mcp
+# The two workspace packages the server imports — by RELATIVE path
+# (services/mcp/src/paths.ts → packages/node-shell/src/repo-root.ts, the CLI
+# bridge → node-shell pptx/net/text/audio) and as @lolly-tools/core. Before
+# npm ci, so the workspace links resolve to real packages. Deliberately NOT
+# the whole packages/ dir: a workspace dir that is present but missing from
+# package-lock.json (audio-dock was) fails `npm ci` outright, while an absent
+# dir simply doesn't activate the workspaces glob.
+COPY packages/core        packages/core
+COPY packages/node-shell  packages/node-shell
 COPY shells/web/package.json  shells/web/package.json
 COPY shells/cli/package.json  shells/cli/package.json
 COPY shells/tui/package.json  shells/tui/package.json

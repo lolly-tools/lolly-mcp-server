@@ -103,7 +103,10 @@ export function mimeForFormat(fmt: string): string {
     case 'avif': return 'image/avif';
     case 'gif': return 'image/gif';
     case 'pdf': case 'pdf-cmyk': return 'application/pdf';
-    case 'emf': return 'image/emf';
+    // Legacy Windows-metafile type rather than RFC 7903 image/emf: it's the
+    // only MIME Google Drive routes into Google Drawings/Slides, and this
+    // Content-Type is what Drive stores when a render URL is pulled in.
+    case 'emf': return 'application/x-msmetafile';
     case 'eps': case 'eps-cmyk': return 'application/postscript';
     case 'dxf': return 'image/vnd.dxf';
     // Pro float formats. `image/x-exr` is the de-facto OpenEXR type (never IANA-
@@ -441,8 +444,20 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   let out: { bytes: Uint8Array; mime: string; tier: string };
 
   if (TIER_A.has(exportFmt)) {
-    const r = await renderTierA(toolId, values, exportFmt, exportOpts(merged), profile);
-    out = { ...r, tier: 'A' };
+    try {
+      const r = await renderTierA(toolId, values, exportFmt, exportOpts(merged), profile);
+      out = { ...r, tier: 'A' };
+    } catch (e) {
+      // Same decision the CLI runner and the png fast path below already made:
+      // on a browser-capable host, escalate ANY browser-free failure rather than
+      // gate on needsBrowserTier's prose. The bridge's refusals (a script-drawn
+      // tool's "root drawable" error) don't all match it, and a hook-integrity
+      // blank is exactly what Tier B's real web shell fixes. A Tier-A-only host
+      // (noBrowser) keeps the honest hard failure.
+      if (o.noBrowser) throw e;
+      warnings.push(`Browser-free path unavailable (${(e as Error).message}); trying the browser tier.`);
+      out = { ...(await renderTierB(toolId, q, exportFmt, merged)), tier: 'B' };
+    }
   } else if (exportFmt === 'png' && formats.includes('svg')) {
     // SVG-native fast path: engine SVG → resvg PNG, no browser.
     try {

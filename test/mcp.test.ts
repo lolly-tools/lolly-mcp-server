@@ -46,6 +46,17 @@ test('list_tools finds qr-code', async () => {
   assert.match(text, /qr-code/);
 });
 
+test('list_tools matches tags and multi-word queries (agent chart discovery)', async () => {
+  // The words an agent reaches for from a prompt like "make a 3d vertical bar
+  // chart" live in d3's TAGS ("3d", "bar"), not its prose ("3-D bars"), and a
+  // multi-word query must match across fields, not as one substring.
+  for (const q of ['3d chart', 'bar chart', 'graph']) {
+    const r = await callTool('lolly_list_tools', { q });
+    const text = r.content.map(c => c.text ?? '').join('\n');
+    assert.match(text, /• d3 — /, `q="${q}" should find the d3 tool`);
+  }
+});
+
 test('describe_tool returns a JSON Schema with the url input', async () => {
   const r = await callTool('lolly_describe_tool', { toolId: 'qr-code' });
   const doc = JSON.parse(r.content[0]!.text!);

@@ -30,6 +30,7 @@ export interface CatalogEntry {
   preview?: string;
   personalized?: boolean;
   featured?: unknown;
+  tags?: string[];
 }
 
 export interface CatalogIndex {
@@ -78,8 +79,13 @@ export async function listTools(filter: ListFilter = {}): Promise<CatalogEntry[]
     if (filter.format && !(t.formats ?? []).map(f => f.toLowerCase()).includes(filter.format.toLowerCase())) return false;
     if (filter.capability && !(t.capabilities ?? []).includes(filter.capability)) return false;
     if (q) {
-      const hay = `${t.id} ${t.name} ${t.description ?? ''} ${t.category ?? ''} ${(t.formats ?? []).join(' ')}`.toLowerCase();
-      if (!hay.includes(q)) return false;
+      // Tags are in the haystack because they carry the words users (and agents)
+      // reach for that the prose does not: d3's description says "3-D bars" but its
+      // tags say "3d", "bar", "graph". Tokens AND together so a multi-word query
+      // like "bar chart" matches across fields; a phrase that matched as one
+      // substring before still matches token by token.
+      const hay = `${t.id} ${t.name} ${t.description ?? ''} ${t.category ?? ''} ${(t.formats ?? []).join(' ')} ${(t.tags ?? []).join(' ')}`.toLowerCase();
+      if (!q.split(/\s+/).every(tok => hay.includes(tok))) return false;
     }
     return true;
   });
