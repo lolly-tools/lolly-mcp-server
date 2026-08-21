@@ -22,8 +22,8 @@ export interface ResourceContent {
 
 export const RESOURCES = [
   { uri: 'lolly://catalog', name: 'Tool catalog', description: 'The full generated Lolly tool index.', mimeType: 'application/json' },
-  { uri: 'lolly://assets', name: 'Brand asset listing', description: 'Every catalog asset id with its type, name, tags and formats — the ids lolly://asset/{id} resolves.', mimeType: 'application/json' },
-  { uri: 'lolly://tokens', name: 'Brand design tokens', description: "On-brand colour swatches (DTCG) with names and CMYK, from the design system's edit head — never one of its published versions.", mimeType: 'application/json' },
+  { uri: 'lolly://assets', name: 'Brand asset listing', description: 'Every catalog asset id with its type, name, tags and formats - the ids lolly://asset/{id} resolves.', mimeType: 'application/json' },
+  { uri: 'lolly://tokens', name: 'Brand design tokens', description: "On-brand colour swatches (DTCG) with names and CMYK, from the design system's edit head - never one of its published versions.", mimeType: 'application/json' },
 ];
 
 export const RESOURCE_TEMPLATES = [

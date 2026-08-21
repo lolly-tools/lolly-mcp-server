@@ -103,7 +103,7 @@ test('a depth of auto is not a request, and never dirties the link', async () =>
   const q = linkQuery(await callTool('lolly_build_url', {
     toolId: 'qr-code', inputs: { url: 'https://lolly.tools' }, depth: 'auto',
   }));
-  assert.equal(q.get('depth'), null, "'auto' is the default — nothing to override");
+  assert.equal(q.get('depth'), null, "'auto' is the default - nothing to override");
 });
 
 test('a contact sheet of one frame is the ordinary render, so it writes nothing', async () => {

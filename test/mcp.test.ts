@@ -53,7 +53,7 @@ test('list_tools matches tags and multi-word queries (agent chart discovery)', a
   for (const q of ['3d chart', 'bar chart', 'graph']) {
     const r = await callTool('lolly_list_tools', { q });
     const text = r.content.map(c => c.text ?? '').join('\n');
-    assert.match(text, /• d3 — /, `q="${q}" should find the d3 tool`);
+    assert.match(text, /• d3 - /, `q="${q}" should find the d3 tool`);
   }
 });
 

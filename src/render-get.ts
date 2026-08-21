@@ -147,7 +147,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
   const pngRequested = fmt === 'png';
   if (!TIER_A.has(fmt) && !pngRequested) {
     return errorResponse(400, `Format "${fmt}" needs the browser render tier, which this public endpoint does not run. ` +
-      `Available here: ${[...TIER_A].join(', ')} — plus png for SVG-native tools.`);
+      `Available here: ${[...TIER_A].join(', ')} - plus png for SVG-native tools.`);
   }
 
   if (query.length > MAX_QUERY) return errorResponse(400, `Query too long (max ${MAX_QUERY} characters).`);
@@ -167,7 +167,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
   }
   const formats = (entry.formats ?? []).map(f => f.toLowerCase());
   if (pngRequested && !formats.includes('svg')) {
-    return errorResponse(400, 'png is only served for SVG-native tools on this endpoint — request svg, or use the app for full raster.');
+    return errorResponse(400, 'png is only served for SVG-native tools on this endpoint - request svg, or use the app for full raster.');
   }
 
   // Renders are deterministic for their URL (c2pa forced off below), so a strong
@@ -186,7 +186,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
   // Rate-limit actual renders only (304s and refusals above cost ~nothing).
   const limit = Number(env.LOLLY_RENDER_GET_RPM) > 0 ? Number(env.LOLLY_RENDER_GET_RPM) : 60;
   const rl = rateLimit(opts.ip || 'unknown', limit);
-  if (!rl.ok) return errorResponse(429, 'Too many renders from this address — slow down.', { 'retry-after': String(rl.retryAfter) });
+  if (!rl.ok) return errorResponse(429, 'Too many renders from this address - slow down.', { 'retry-after': String(rl.retryAfter) });
 
   let result;
   try {

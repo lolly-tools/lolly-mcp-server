@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # ─────────────────────────────────────────────────────────────────────────────
-# Lolly MCP server — Tier-B (headless Chromium) container image for Cloud Run.
+# Lolly MCP server - Tier-B (headless Chromium) container image for Cloud Run.
 #
 # The Vercel function (api/mcp) is Tier-A only (no browser). This image adds the
-# full Tier-B pipeline — png/jpeg/webp for ALL tools, pdf (incl. CMYK + print
-# marks), and video — by shipping Chromium (via playwright-core) + driving a web
+# full Tier-B pipeline - png/jpeg/webp for ALL tools, pdf (incl. CMYK + print
+# marks), and video - by shipping Chromium (via playwright-core) + driving a web
 # shell.
 #
 # BUILD CONTEXT = REPO ROOT (the server reads engine/ + catalog/ + tools/ at
@@ -13,13 +13,13 @@
 # Build it with services/mcp/deploy/cloudbuild.yaml (or `docker build -f`).
 # ─────────────────────────────────────────────────────────────────────────────
 
-# glibc base (Debian) is REQUIRED — @resvg/resvg-js prebuilt binaries and Chromium
+# glibc base (Debian) is REQUIRED - @resvg/resvg-js prebuilt binaries and Chromium
 # do not run on alpine/musl. Node 24 runs the repo's .ts sources natively.
 FROM node:24-bookworm-slim@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f
 
 ENV NODE_ENV=production \
     # Chromium lands here at build time; render.ts + install-browser.ts both point
-    # PLAYWRIGHT_BROWSERS_PATH at services/mcp/.browsers — keep them in agreement.
+    # PLAYWRIGHT_BROWSERS_PATH at services/mcp/.browsers - keep them in agreement.
     PLAYWRIGHT_BROWSERS_PATH=/app/services/mcp/.browsers \
     # Drive the live web shell for Tier B (no need to bundle shells/web/dist).
     # Override to a prebuilt dist via LOLLY_WEB_DIST for a fully air-gapped image.
@@ -32,7 +32,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY engine               engine
 COPY services/mcp         services/mcp
-# The two workspace packages the server imports — by RELATIVE path
+# The two workspace packages the server imports - by RELATIVE path
 # (services/mcp/src/paths.ts → packages/node-shell/src/repo-root.ts, the CLI
 # bridge → node-shell pptx/net/text/audio) and as @lolly-tools/core. Before
 # npm ci, so the workspace links resolve to real packages. Deliberately NOT
@@ -64,7 +64,7 @@ COPY shells/web/src shells/web/src
 
 # 4) Chromium for Tier B, in two explicit steps (root, at build time):
 #      a) `--with-deps` installs the OS libraries (apt) Chromium needs.
-#      b) a plain `--force` install pulls the browser BINARY itself — a bare
+#      b) a plain `--force` install pulls the browser BINARY itself - a bare
 #         `install chromium --with-deps` was installing deps but skipping the
 #         download, leaving no executable at runtime.
 #    Then hard-verify the executable exists so a bad install fails the BUILD
@@ -75,5 +75,5 @@ RUN node services/mcp/scripts/install-browser.ts --with-deps \
 
 # Cloud Run injects $PORT (8080); http.ts reads process.env.PORT. The MCP server
 # does its OWN bearer/OAuth auth, so Cloud Run IAM stays public
-# (--allow-unauthenticated in deploy.sh) — the token is the gate.
+# (--allow-unauthenticated in deploy.sh) - the token is the gate.
 CMD ["node", "services/mcp/src/http.ts"]

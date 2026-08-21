@@ -6,7 +6,7 @@
 #
 # Context is the repo root; Cloud Build honours the repo's .gitignore (no
 # .gcloudignore needed), so node_modules/, services/mcp/.browsers/, and dist/ are
-# NOT uploaded — Chromium is fetched fresh inside the build.
+# NOT uploaded - Chromium is fetched fresh inside the build.
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:

@@ -224,7 +224,7 @@ async function svgToPng(svg: string, width: number | undefined, background: stri
   // Beyond MAX_RASTER_EDGE_PX:1 aspect the capped raster's short edge drops
   // below one pixel. resvg refuses a zero-size target, so refuse honestly here.
   if (iw * scale < 1 || ih * scale < 1) {
-    throw new RenderError('SVG aspect ratio is too extreme to rasterise within the size cap — export svg instead.');
+    throw new RenderError('SVG aspect ratio is too extreme to rasterise within the size cap - export svg instead.');
   }
   // Exact requested width when it fits the cap; otherwise a zoom that clamps the
   // LONGEST edge (a width-mode fit alone couldn't bound a very tall SVG's height).
@@ -279,8 +279,8 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
             hosted
               ? `This format needs the browser render tier, which isn't enabled on this hosted ` +
                 `endpoint. What renders here: vector formats (svg, eps, emf), the data formats ` +
-                `(html, md, json, csv, ics, vcf), and png for SVG-native tools. Try svg — it works ` +
-                `for every tool — or png for a simple vector tool (e.g. qr-code).`
+                `(html, md, json, csv, ics, vcf), and png for SVG-native tools. Try svg - it works ` +
+                `for every tool - or png for a simple vector tool (e.g. qr-code).`
               : `Chromium is not installed for the Tier-B render path. Run ` +
                 `\`npm run install:browser\` (downloads Chromium into services/mcp/.browsers), ` +
                 `or point LOLLY_BROWSER_CHANNEL / LOLLY_BROWSER_PATH at an existing browser.`,
@@ -367,7 +367,7 @@ async function renderTierB(
       download = await downloadP;
     } catch {
       throw new RenderError(
-        `Tool "${toolId}" produced no "${fmt}" export within the time limit — the tool may ` +
+        `Tool "${toolId}" produced no "${fmt}" export within the time limit - the tool may ` +
         `have failed to render, or the format isn't supported in the browser. Check the inputs.`,
       );
     }
@@ -439,7 +439,7 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   // Open-password is only wired through for standard `pdf` (see exportUrl); the
   // CMYK press path drops it, so the returned PDF would be UNprotected. Say so.
   if (merged.password && exportFmt === 'pdf-cmyk') {
-    warnings.push('Password is not applied for pdf-cmyk — the returned PDF is not protected. Use format "pdf" for an open-password.');
+    warnings.push('Password is not applied for pdf-cmyk - the returned PDF is not protected. Use format "pdf" for an open-password.');
   }
   let out: { bytes: Uint8Array; mime: string; tier: string };
 
@@ -484,9 +484,9 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   let bytes = out.bytes;
   if (merged.c2pa?.on && C2PA_FORMATS.includes(exportFmt as ExportFormat) && !(exportFmt === 'pdf' && merged.password)) {
     try { bytes = await stampC2pa(bytes, exportFmt, tool.manifest, values, merged); }
-    catch (e) { warnings.push(`Content Credentials not attached — ${(e as Error).message}`); }
+    catch (e) { warnings.push(`Content Credentials not attached - ${(e as Error).message}`); }
   } else if (merged.c2pa?.on) {
-    warnings.push(`Format "${fmt}" cannot carry Content Credentials — skipped.`);
+    warnings.push(`Format "${fmt}" cannot carry Content Credentials - skipped.`);
   }
 
   return { bytes, mime: out.mime, format: fmt, tier: out.tier, warnings };
@@ -541,13 +541,13 @@ async function transformTierB(
     try {
       await page.waitForSelector(picker, { state: 'attached', timeout: 30_000 });
     } catch {
-      throw new RenderError(`The web shell showed no file picker for "${fileInputId}" on "${toolId}" — the built shell may predate this tool.`);
+      throw new RenderError(`The web shell showed no file picker for "${fileInputId}" on "${toolId}" - the built shell may predate this tool.`);
     }
     await page.setInputFiles(picker, { name: file.name, mimeType: file.mime || 'application/octet-stream', buffer: Buffer.from(file.bytes) });
     try {
       await page.waitForSelector('[data-export-file]:not([disabled])', { state: 'visible', timeout: 60_000 });
     } catch {
-      throw new RenderError(`"${toolId}" never offered its export button for ${file.name} — the tool may have refused this file.`);
+      throw new RenderError(`"${toolId}" never offered its export button for ${file.name} - the tool may have refused this file.`);
     }
     // [data-export-wait] means the tool's canvas still owes these inputs work
     // (redact: page previews rendering, or bars from the instruction string that

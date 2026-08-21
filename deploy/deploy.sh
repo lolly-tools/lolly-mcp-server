@@ -6,7 +6,7 @@
 #   2. ./deploy.sh
 #
 # Idempotent: enables APIs, creates the Artifact Registry repo + the two Secret
-# Manager secrets if missing, builds via Cloud Build (native amd64 — no local
+# Manager secrets if missing, builds via Cloud Build (native amd64 - no local
 # Docker), deploys, and smoke-tests. Run from anywhere; paths are resolved
 # relative to this script. Everything Google-specific stays in services/mcp/deploy/.
 # ─────────────────────────────────────────────────────────────────────────────

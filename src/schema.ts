@@ -16,7 +16,7 @@ import type { InputModelItem, BlockFieldSpec } from '../../../engine/src/inputs.
 export type JsonSchema = Record<string, unknown>;
 
 function describe(i: { label?: string; help?: string }): string | undefined {
-  const s = [i.label, i.help].filter(Boolean).join(' — ');
+  const s = [i.label, i.help].filter(Boolean).join(' - ');
   return s || undefined;
 }
 

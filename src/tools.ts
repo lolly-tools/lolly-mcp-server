@@ -76,7 +76,7 @@ const EXPORT_ARGS = {
     properties: {
       peakNits: { type: 'number', description: 'Peak luminance ceiling in nits (default 1000).' },
       reach: { type: 'number', description: '0-100: how far down the lightness range the glow reaches (default 45).' },
-      lift: { type: 'number', description: '0-100: how much darks are lifted (default 0 — darks stay dark).' },
+      lift: { type: 'number', description: '0-100: how much darks are lifted (default 0 - darks stay dark).' },
       richness: { type: 'number', description: '0-100: colour-richness focus of the boost (default 40).' },
     },
     additionalProperties: false,
@@ -84,7 +84,7 @@ const EXPORT_ARGS = {
   bleed: { type: 'string', description: "Print bleed, e.g. '3mm'. Grows the page past the trim so a trim that drifts still lands on artwork." },
   marks: { type: 'string', description: "Printer's marks to draw, comma-separated (e.g. 'crop,registration,colorbar,info')." },
   cuts: { type: 'number', description: 'Emit N frames of a timed tool as a contact sheet instead of the single playhead frame.' },
-  imprint: { type: 'boolean', description: "Lolly's own pixel watermark on raster exports. ON by default — pass false to opt out." },
+  imprint: { type: 'boolean', description: "Lolly's own pixel watermark on raster exports. ON by default - pass false to opt out." },
   durable: { type: 'boolean', description: 'Embed the durable Content Credential that survives re-encoding (opt-in, off by default).' },
 };
 
@@ -219,7 +219,7 @@ export const TOOL_DEFS: McpToolDef[] = [
         instructions: {
           type: 'string',
           description:
-            'Canonical instruction string: a lolly.tools redact link, or just its query — e.g. ' +
+            'Canonical instruction string: a lolly.tools redact link, or just its query - e.g. ' +
             '"bars=1,40,60,200,24~1,40,100,120,14&quantise=1&grayscale=1". Bar fields are page,x,y,w,h: ' +
             "PDF bars in points from the page's top-left, image bars in pixels from the top-left.",
         },
@@ -237,7 +237,7 @@ export const TOOL_DEFS: McpToolDef[] = [
           },
         },
         quantise: { type: 'boolean', description: 'Round bar widths up to a coarse grid so width hints at length less (default on).' },
-        grayscale: { type: 'boolean', description: 'Drop colour — removes colour-laser tracking dots from a scan.' },
+        grayscale: { type: 'boolean', description: 'Drop colour - removes colour-laser tracking dots from a scan.' },
         resign: { type: 'boolean', description: 'Opt in to a fresh Content Credential on the redacted copy (default off).' },
       },
       required: ['file'],
@@ -246,7 +246,7 @@ export const TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: 'lolly_verify',
-    description: "Verify a file's Content Credentials (C2PA) on-device: was it genuinely made with Lolly, who signed it, and has it changed since export. Returns the verdict, signer identity, edit history, and embedded file metadata (EXIF/XMP) as text + JSON. Bytes in, verdict out — nothing leaves the server.",
+    description: "Verify a file's Content Credentials (C2PA) on-device: was it genuinely made with Lolly, who signed it, and has it changed since export. Returns the verdict, signer identity, edit history, and embedded file metadata (EXIF/XMP) as text + JSON. Bytes in, verdict out - nothing leaves the server.",
     inputSchema: {
       type: 'object',
       properties: { file: FILE_ARG },
@@ -370,12 +370,12 @@ function verifyText(name: string, report: VerifyReport, headline: string): strin
     lines.push('Edit history (incl. ingredient/parent manifests):');
     for (const h of history) {
       const who = h.softwareAgent || h.generator;
-      lines.push(`  – ${clean(h.action)}${h.when ? ` @ ${clean(h.when)}` : ''}${who ? ` (${clean(who)})` : ''}${h.description ? ` — ${clean(h.description)}` : ''}`);
+      lines.push(`  - ${clean(h.action)}${h.when ? ` @ ${clean(h.when)}` : ''}${who ? ` (${clean(who)})` : ''}${h.description ? ` - ${clean(h.description)}` : ''}`);
     }
   }
   for (const chk of verdictChecks(report)) {
     const mark = chk.mark === 'ok' ? '✓' : chk.mark === 'info' ? 'ℹ' : '✕';
-    lines.push(`  ${mark} ${chk.code} — ${chk.explanation}`);
+    lines.push(`  ${mark} ${chk.code} - ${chk.explanation}`);
   }
   return lines.join('\n');
 }
@@ -393,7 +393,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
     switch (name) {
       case 'lolly_list_tools': {
         const tools = await listTools(args as never);
-        const lines = tools.map(t => `• ${t.id} — ${t.name} [${t.status}] · formats: ${(t.formats ?? []).join(', ')} · ${t.width}×${t.height}`);
+        const lines = tools.map(t => `• ${t.id} - ${t.name} [${t.status}] · formats: ${(t.formats ?? []).join(', ')} · ${t.width}×${t.height}`);
         const summary = `${tools.length} tool(s):\n${lines.join('\n')}`;
         return {
           content: [
@@ -416,7 +416,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
           id: m.id, name: m.name, description: m.description, status: m.status, version: m.version,
           formats: m.render.formats, width: m.render.width, height: m.render.height,
           transform: Boolean(m.hooks?.exportFile),
-          note: m.status === 'experimental' ? 'Experimental — exports are watermarked.' : undefined,
+          note: m.status === 'experimental' ? 'Experimental - exports are watermarked.' : undefined,
           inputSchema: schema,
           examples,
         };
@@ -524,7 +524,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
         const bars = inputs['bars'];
         if (!Array.isArray(bars) || bars.length === 0) {
           return errorResult(
-            'No redaction bars given. Pass `instructions` (e.g. "bars=1,40,60,200,24") or a `bars` array — ' +
+            'No redaction bars given. Pass `instructions` (e.g. "bars=1,40,60,200,24") or a `bars` array - ' +
             'a redaction with no bars would just re-encode the file.',
           );
         }
@@ -587,7 +587,7 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
 export async function serverInstructions(): Promise<string> {
   const { tools } = await loadIndex();
   return (
-    `Lolly MCP server (engine ${ENGINE_VERSION}) — generate on-brand SUSE creative assets. ` +
+    `Lolly MCP server (engine ${ENGINE_VERSION}) - generate on-brand SUSE creative assets. ` +
     `${tools.length} tools available. Workflow: lolly_list_tools → lolly_describe_tool → lolly_render. ` +
     `Use lolly_build_url for a shareable/editable link without rendering, lolly_transform for on-device file utilities, ` +
     `lolly_redact to destroy regions of an image/SVG/PDF from one reusable instruction string, ` +
@@ -654,10 +654,10 @@ export async function listPrompts(): Promise<McpPromptDef[]> {
 export async function getPrompt(name: string, args: Record<string, string> = {}): Promise<McpPromptResult | null> {
   if (name === GENERIC_PROMPT) {
     const { tools } = await loadIndex();
-    const listing = tools.map(t => `• ${t.id} — ${t.name}${t.description ? `: ${t.description}` : ''}`).join('\n');
+    const listing = tools.map(t => `• ${t.id} - ${t.name}${t.description ? `: ${t.description}` : ''}`).join('\n');
     const head = [
       "You are creating an on-brand asset with Lolly (the brand's constraint-first asset generator).",
-      args['brief'] ? `Brief: ${args['brief']}` : 'No brief was provided — ask the user what they need first.',
+      args['brief'] ? `Brief: ${args['brief']}` : 'No brief was provided - ask the user what they need first.',
       ...(args['format'] ? [`Preferred format: ${args['format']}`] : []),
     ].join('\n');
     const text =
@@ -684,7 +684,7 @@ export async function getPrompt(name: string, args: Record<string, string> = {})
     '',
     'Steps:',
     `1. Call lolly_describe_tool with toolId "${m.id}" for the exact input JSON Schema.`,
-    `2. Choose inputs${looks.length ? " — example looks that show the tool's range:" : '.'}`,
+    `2. Choose inputs${looks.length ? " - example looks that show the tool's range:" : '.'}`,
     ...(looks.length ? [JSON.stringify(looks, null, 2)] : []),
     `3. Call lolly_render with toolId "${m.id}" and a format from: ${m.render.formats.join(', ')}.`,
     ...(given.length ? ['', 'User-provided inputs to honour:', JSON.stringify(Object.fromEntries(given), null, 2)] : []),

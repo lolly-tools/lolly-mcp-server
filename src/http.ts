@@ -30,7 +30,7 @@ export function startHttpServer(port = Number(process.env.PORT || 8790)): void {
     });
   }).listen(port, () => {
     process.stderr.write(`lolly-mcp (http) on http://localhost:${port}/mcp\n`);
-    if (!process.env.LOLLY_WEB_BASE) process.stderr.write('  note: LOLLY_WEB_BASE unset — Tier-B (browser) formats disabled; svg/data + resvg-png still work.\n');
+    if (!process.env.LOLLY_WEB_BASE) process.stderr.write('  note: LOLLY_WEB_BASE unset - Tier-B (browser) formats disabled; svg/data + resvg-png still work.\n');
   });
 }
 
