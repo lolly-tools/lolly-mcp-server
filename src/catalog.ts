@@ -80,7 +80,7 @@ export async function listTools(filter: ListFilter = {}): Promise<CatalogEntry[]
     if (filter.capability && !(t.capabilities ?? []).includes(filter.capability)) return false;
     if (q) {
       // Tags are in the haystack because they carry the words users (and agents)
-      // reach for that the prose does not: d3's description says "3-D bars" but its
+      // reach for that the prose does not: chart's description says "3-D bars" but its
       // tags say "3d", "bar", "graph". Tokens AND together so a multi-word query
       // like "bar chart" matches across fields; a phrase that matched as one
       // substring before still matches token by token.

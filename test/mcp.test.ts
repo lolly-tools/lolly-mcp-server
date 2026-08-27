@@ -48,12 +48,12 @@ test('list_tools finds qr-code', async () => {
 
 test('list_tools matches tags and multi-word queries (agent chart discovery)', async () => {
   // The words an agent reaches for from a prompt like "make a 3d vertical bar
-  // chart" live in d3's TAGS ("3d", "bar"), not its prose ("3-D bars"), and a
+  // chart" live in chart's TAGS ("3d", "bar"), not its prose ("3-D bars"), and a
   // multi-word query must match across fields, not as one substring.
   for (const q of ['3d chart', 'bar chart', 'graph']) {
     const r = await callTool('lolly_list_tools', { q });
     const text = r.content.map(c => c.text ?? '').join('\n');
-    assert.match(text, /• d3 - /, `q="${q}" should find the d3 tool`);
+    assert.match(text, /• chart - /, `q="${q}" should find the chart tool`);
   }
 });
 
