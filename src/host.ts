@@ -47,7 +47,9 @@ export function withHost<T>(profile: Profile, fn: (dom: Jsdom, host: HostV1) => 
     g['document'] = dom.window.document;
     g['Element'] = (dom.window as unknown as { Element: unknown }).Element;
     try {
-      const host = await createCliBridge({ dom: dom as never, profile });
+      // A hosted process: a hook's host.capture.page may only reach public http(s)
+      // pages, never the worker's own network (cloud metadata, localhost, RFC 1918).
+      const host = await createCliBridge({ dom: dom as never, profile, capturePublicOnly: true });
       // Redirect logging to stderr (never stdout - it is the stdio protocol channel).
       (host as { log: HostV1['log'] }).log = (level, msg, ctx) => {
         process.stderr.write(`[mcp:${level}] ${msg}${ctx ? ' ' + safeJson(ctx) : ''}\n`);
