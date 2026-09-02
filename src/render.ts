@@ -16,7 +16,7 @@
 import {
   createRuntime, parseUrlState, expandQuery,
   C2PA_FORMATS, embedC2pa, buildInputModel, serializeUrlState,
-  parseDimension, toPixels,
+  parseDimension, toPixels, PENPOT_MIME,
 } from '@lolly/engine';
 import type { ExportFormat, ExportOpts, Profile, InputFile } from '@lolly-tools/core/host-v1';
 import type { ToolManifest } from '../../../engine/src/loader.ts';
@@ -39,8 +39,12 @@ export { closeWebShell };
  *  are the engine's own OpenEXR / Radiance writers over a resvg raster of the tool's
  *  SVG, so they are browser-free in exactly the sense this set means. They refuse
  *  loudly (400) without an `hdr=` request - see DEEP_FORMATS in node-shell/raster.ts
- *  and section 10's depth-follows-provenance rule. */
-export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'exr', 'hdr', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
+ *  and section 10's depth-follows-provenance rule.
+ *  `penpot` belongs here for the same reason emf/eps do (plans/178): the .penpot
+ *  writer is pure engine over the tool's own `<svg>` - no rasteriser and no browser
+ *  anywhere in the path - so an SVG-native tool's archive builds in-process. An
+ *  HTML-layout tool has no root `<svg>` and escalates to Tier B, exactly as emf does. */
+export const TIER_A = new Set(['svg', 'emf', 'eps', 'eps-cmyk', 'dxf', 'exr', 'hdr', 'penpot', 'html', 'md', 'txt', 'json', 'csv', 'ics', 'vcf']);
 
 /** Longest raster edge the resvg fast path will produce. A content-sized SVG
  *  (unbounded text → a viewBox that scales with input length) must never dictate
@@ -115,6 +119,10 @@ export function mimeForFormat(fmt: string): string {
     case 'hdr': return 'image/vnd.radiance';
     case 'tiff': case 'cmyk-tiff': return 'image/tiff';
     case 'ico': return 'image/x-icon';
+    // A Penpot binfile archive. It IS a zip, but the type must not say so: a
+    // `zip` MIME is what renames the download to `.zip` downstream, and Penpot's
+    // Import wants the `.penpot` name. PENPOT_MIME is the engine's own constant.
+    case 'penpot': return PENPOT_MIME;
     case 'zip': return 'application/zip';
     case 'webm': return 'video/webm';
     case 'mp4': return 'video/mp4';
