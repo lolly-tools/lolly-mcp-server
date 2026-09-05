@@ -35,7 +35,7 @@ test('initialize advertises the server', async () => {
 test('tools/list returns the meta-tools', async () => {
   const list = await rpc('tools/list');
   const names = (list['tools'] as { name: string }[]).map(t => t.name);
-  for (const n of ['lolly_list_tools', 'lolly_describe_tool', 'lolly_build_url', 'lolly_render', 'lolly_transform']) {
+  for (const n of ['lolly_list_tools', 'lolly_describe_tool', 'lolly_validate', 'lolly_build_url', 'lolly_render', 'lolly_transform']) {
     assert.ok(names.includes(n), `missing tool ${n}`);
   }
 });

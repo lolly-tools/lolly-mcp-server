@@ -286,7 +286,9 @@ export function createGateway(env: NodeJS.ProcessEnv = process.env): (req: Incom
       let msg: JsonRpcRequest;
       try { msg = JSON.parse(raw || 'null') as JsonRpcRequest; }
       catch { res.writeHead(200, { ...CORS, 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })); return; }
-      const response = await dispatch(msg);
+      // Private resources are opt-in for long-lived hosts, never a shared anonymous
+      // bucket. Scope uses the already-verified bearer hash, not caller JSON.
+      const response = await dispatch(msg, { fileScope: env.LOLLY_MCP_PRIVATE_FILES === '1' && env.LOLLY_MCP_TOKEN?.trim() && !env.VERCEL && auth !== 'anonymous' ? principal : undefined });
       if (!response) { res.writeHead(202, CORS); res.end(); return; } // notification
       res.writeHead(200, { ...CORS, 'content-type': 'application/json' });
       res.end(JSON.stringify(response));

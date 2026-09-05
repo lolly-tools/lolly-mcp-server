@@ -32,7 +32,7 @@ async function handleLine(line: string): Promise<void> {
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }) + '\n');
     return;
   }
-  const res = await dispatch(req);
+  const res = await dispatch(req, { fileScope: 'local-stdio' });
   if (res) process.stdout.write(JSON.stringify(res) + '\n');
 }
 

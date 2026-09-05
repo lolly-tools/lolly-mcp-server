@@ -29,23 +29,34 @@ function withMeta(schema: JsonSchema, item: InputModelItem, extraDesc?: string):
 }
 
 function numberField(f: BlockFieldSpec): JsonSchema {
-  const s: JsonSchema = { type: 'number' };
-  if (f.min !== undefined) s['minimum'] = f.min;
-  if (f.max !== undefined) s['maximum'] = f.max;
-  if (f.default !== undefined) s['default'] = f.default;
-  if (f.label) s['description'] = f.label;
+  // `BlockFieldSpec`'s SDK type predates the Design manifest's explicit empty
+  // sentinel for optional numeric/boolean fields. Keep the escape hatch narrow:
+  // only a field that actually declares `default: ""` gets the extra branch.
+  const declaredDefault: unknown = (f as { default?: unknown }).default;
+  const number: JsonSchema = { type: 'number' };
+  if (f.min !== undefined) number['minimum'] = f.min;
+  if (f.max !== undefined) number['maximum'] = f.max;
+  const s: JsonSchema = declaredDefault === '' ? { anyOf: [number, { const: '' }] } : number;
+  if (declaredDefault !== undefined) s['default'] = declaredDefault;
+  const desc = describe(f);
+  if (desc) s['description'] = desc;
   return s;
 }
 
 function blockFieldSchema(f: BlockFieldSpec): JsonSchema {
+  const declaredDefault: unknown = (f as { default?: unknown }).default;
   switch (f.type) {
     case 'number': return numberField(f);
-    case 'boolean': return { type: 'boolean', ...(f.label ? { description: f.label } : {}) };
+    case 'boolean': return {
+      ...(declaredDefault === '' ? { anyOf: [{ type: 'boolean' }, { const: '' }] } : { type: 'boolean' }),
+      ...(declaredDefault !== undefined ? { default: declaredDefault } : {}),
+      ...(describe(f) ? { description: describe(f) } : {}),
+    };
     case 'select': {
       const values = (f.options ?? []).map(o => o.value);
-      return { type: 'string', ...(values.length ? { enum: values } : {}), ...(f.label ? { description: f.label } : {}) };
+      return { type: 'string', ...(values.length ? { enum: values } : {}), ...(declaredDefault !== undefined ? { default: declaredDefault } : {}), ...(describe(f) ? { description: describe(f) } : {}) };
     }
-    default: return { type: 'string', ...(f.label ? { description: f.label } : {}) };
+    default: return { type: 'string', ...(declaredDefault !== undefined ? { default: declaredDefault } : {}), ...(describe(f) ? { description: describe(f) } : {}) };
   }
 }
 
@@ -91,7 +102,7 @@ function schemaForInput(item: InputModelItem): JsonSchema {
     case 'blocks': {
       const properties: Record<string, JsonSchema> = {};
       for (const f of item.fields ?? []) properties[f.id] = blockFieldSchema(f);
-      return withMeta({ type: 'array', items: { type: 'object', properties, additionalProperties: true } }, item);
+      return withMeta({ type: 'array', items: { type: 'object', properties, additionalProperties: false } }, item);
     }
     default:
       return withMeta({ type: 'string' }, item);
