@@ -27,10 +27,8 @@
  *    tool-authored markup fed by query params and must never execute in the
  *    lolly.tools origin when navigated to directly (as an `<img src>` the header
  *    is moot; this guards direct navigation).
- *  - Rate limiting is a best-effort, per-instance in-memory sliding window per
- *    client IP. Serverless instances share no state, so this is only a backstop.
- *    Real enforcement for a public deployment belongs to platform WAF rules
- *    (e.g. Vercel Firewall), not application code.
+ *  - Rate limiting is supplied by the gateway's durable limiter in hosted
+ *    deployments. Direct/local calls use the bounded in-memory implementation.
  *  - Self-hosters can switch the route off entirely: LOLLY_DISABLE_RENDER_GET=1
  *    makes every /tool/<id>.<ext> URL return 404.
  */
@@ -39,6 +37,7 @@ import { createHash } from 'node:crypto';
 import { ENGINE_VERSION, expandQuery, parseDimension, toPixels } from '@lolly/engine';
 import { loadIndex } from './catalog.ts';
 import { TIER_A, render, normFormat, mimeForFormat, isTextFormat, RenderError } from './render.ts';
+import { MemoryRateLimiter, type RateLimiter } from './rate-limit.ts';
 
 export interface RenderGetResponse {
   status: number;
@@ -65,27 +64,8 @@ const MAX_QUERY = 4096;
 const MAX_EDGE_PX = 10_000;
 const MAX_DPI = 1200;
 
-// ── best-effort rate limit (per instance, per client IP) ────────────────────
 const RL_WINDOW_MS = 60_000;
-const RL_MAX_IPS = 10_000; // bound the map; oldest-inserted evicted beyond this
-const rlHits = new Map<string, number[]>();
-
-function rateLimit(ip: string, limit: number): { ok: boolean; retryAfter: number } {
-  const now = Date.now();
-  let hits = rlHits.get(ip);
-  if (!hits) {
-    if (rlHits.size >= RL_MAX_IPS) {
-      const oldest = rlHits.keys().next().value;
-      if (oldest !== undefined) rlHits.delete(oldest);
-    }
-    hits = [];
-    rlHits.set(ip, hits);
-  }
-  while (hits.length && hits[0]! <= now - RL_WINDOW_MS) hits.shift();
-  if (hits.length >= limit) return { ok: false, retryAfter: Math.max(1, Math.ceil((hits[0]! + RL_WINDOW_MS - now) / 1000)) };
-  hits.push(now);
-  return { ok: true, retryAfter: 0 };
-}
+const localRateLimiter = new MemoryRateLimiter();
 
 const NO_STORE: Record<string, string> = {
   'content-type': 'application/json; charset=utf-8',
@@ -129,6 +109,7 @@ export interface RenderGetOpts {
   ip: string;
   ifNoneMatch?: string;
   env?: NodeJS.ProcessEnv;
+  rateLimiter?: RateLimiter;
 }
 
 /**
@@ -185,7 +166,7 @@ export async function renderGet(path: string, query: string, opts: RenderGetOpts
 
   // Rate-limit actual renders only (304s and refusals above cost ~nothing).
   const limit = Number(env.LOLLY_RENDER_GET_RPM) > 0 ? Number(env.LOLLY_RENDER_GET_RPM) : 60;
-  const rl = rateLimit(opts.ip || 'unknown', limit);
+  const rl = await (opts.rateLimiter ?? localRateLimiter).consume('render', opts.ip || 'unknown', limit, RL_WINDOW_MS);
   if (!rl.ok) return errorResponse(429, 'Too many renders from this address - slow down.', { 'retry-after': String(rl.retryAfter) });
 
   let result;

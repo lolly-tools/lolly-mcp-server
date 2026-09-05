@@ -26,11 +26,15 @@ import { assertRenderOk, RenderIntegrityError } from '../../../packages/node-she
 import { isDeepFormat, DeepSourceError } from '../../../packages/node-shell/src/raster.ts';
 import { buildExportC2paOpts } from '../../../packages/node-shell/src/c2pa-opts.ts';
 import { needsBrowserTier } from '../../../packages/node-shell/src/browser-tier.ts';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { loadToolCached } from './catalog.ts';
 import { withHost } from './host.ts';
 import { FONTS_DIR, BROWSERS_DIR } from './paths.ts';
 import { webShellBase, closeWebShell } from './webshell.ts';
+import {
+  BrowserJobQueue, BrowserQueueFullError, BrowserQueueTimeoutError, browserQueueOptions,
+} from './browser-jobs.ts';
+import { installBrowserEgressPolicy } from './egress.ts';
 
 export { closeWebShell };
 
@@ -250,6 +254,39 @@ async function svgToPng(svg: string, width: number | undefined, background: stri
 // ── Tier B: headless Chromium (lazy, env-gated, pooled) ──────────────────────
 
 let browserPromise: Promise<import('playwright-core').Browser> | null = null;
+const browserJobs = new BrowserJobQueue(browserQueueOptions());
+const MAX_BROWSER_OUTPUT_BYTES = 256 * 1024 * 1024;
+const MAX_TRANSFORM_INPUT_BYTES = 24 * 1024 * 1024;
+
+async function withBrowserJob<T>(job: () => Promise<T>): Promise<T> {
+  try {
+    return await browserJobs.run(job);
+  } catch (error) {
+    if (error instanceof BrowserQueueFullError || error instanceof BrowserQueueTimeoutError) {
+      throw new RenderError(`${error.message}; retry later.`);
+    }
+    throw error;
+  }
+}
+
+async function readBoundedDownload(filename: string): Promise<Uint8Array> {
+  const info = await stat(filename);
+  if (info.size > MAX_BROWSER_OUTPUT_BYTES) {
+    throw new RenderError(`Browser export exceeds the ${MAX_BROWSER_OUTPUT_BYTES}-byte output limit.`);
+  }
+  return new Uint8Array(await readFile(filename));
+}
+
+/** Browser sandboxing is the default. Containers that genuinely cannot provide
+ * a Chromium sandbox must opt out explicitly and supply the surrounding
+ * container controls documented by the deployment guide. */
+export function browserLaunchArgs(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [
+    ...(env.LOLLY_BROWSER_NO_SANDBOX === '1' ? ['--no-sandbox'] : []),
+    '--force-color-profile=srgb',
+    '--font-render-hinting=none',
+  ];
+}
 
 async function getBrowser(): Promise<import('playwright-core').Browser> {
   if (!browserPromise) {
@@ -274,7 +311,7 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
           // WebGL-dependent tool (3d, viz) renders its fallback rather than GL
           // content on this tier. Add '--use-angle=swiftshader',
           // '--enable-unsafe-swiftshader' if a hosted deployment needs those tools.
-          args: ['--no-sandbox', '--force-color-profile=srgb', '--font-render-hinting=none'],
+          args: browserLaunchArgs(),
         });
       } catch (err) {
         const msg = (err as Error).message || '';
@@ -313,7 +350,7 @@ export async function closeBrowser(): Promise<void> {
 const EXPORT_URL_RESERVED = ['format', 'export', 'copy', 'width', 'w', 'height', 'h', 'unit', 'dpi', 'password', 'profile', 'c2pa', 'preview', 'options'];
 
 /** Build the `#/tool/<id>?…` URL that makes the web shell auto-export on load. */
-function exportUrl(base: string, toolId: string, query: string, fmt: string, o: RenderOpts): string {
+export function exportUrl(base: string, toolId: string, query: string, fmt: string, o: RenderOpts): string {
   const p = new URLSearchParams(query);
   for (const k of EXPORT_URL_RESERVED) p.delete(k);
   p.set('format', fmt);
@@ -323,13 +360,29 @@ function exportUrl(base: string, toolId: string, query: string, fmt: string, o: 
   if (unit !== 'px') { p.set('unit', unit); p.set('dpi', String(o.dpi || 300)); }
   // CMYK press condition for pdf-cmyk / cmyk-tiff (the app's `profile` reserved param).
   if (o.colorProfile) p.set('profile', o.colorProfile);
-  // Standard-PDF password is applied by the app during export (clear-text in URL by
-  // design, same as a share link); strong locks aren't a Tier-B concern here.
-  if (o.password && (fmt === 'pdf')) p.set('password', o.password);
   p.set('export', '1'); // presence flag → immediate download on load
   const q = p.toString();
   const tmpl = process.env.LOLLY_TOOL_URL_TEMPLATE || `${base}/#/tool/{id}?{query}`;
   return tmpl.replace('{id}', encodeURIComponent(toolId)).replace('{query}', q);
+}
+
+type ExportSecretContext = Pick<import('playwright-core').BrowserContext, 'exposeBinding'>;
+
+/** Publish a PDF password as a one-shot browser-context RPC. It never enters
+ * navigation, request headers, console output, or an init-script literal. */
+export async function exposeExportPassword(
+  context: ExportSecretContext,
+  password: string | undefined,
+): Promise<() => void> {
+  let held = password || undefined;
+  if (!held) return () => {};
+  await context.exposeBinding('__lollyTakeExportSecret', (_source, kind: unknown) => {
+    if (kind !== 'pdf-password') return null;
+    const value = held ?? null;
+    held = undefined;
+    return value;
+  });
+  return () => { held = undefined; };
 }
 
 /** How long to wait for the download to arrive. Video records in real time. */
@@ -354,6 +407,7 @@ async function renderTierB(
   fmt: string,
   o: RenderOpts,
 ): Promise<{ bytes: Uint8Array; mime: string }> {
+  return withBrowserJob(async () => {
   const base = await webShellBase();
   const url = exportUrl(base, toolId, query, fmt, o);
   let browser: import('playwright-core').Browser;
@@ -364,8 +418,11 @@ async function renderTierB(
     throw new RenderError(`Tier-B browser unavailable: ${(e as Error).message}`);
   }
   const ctx = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: true });
+  let clearPassword = (): void => {};
   try {
+    clearPassword = await exposeExportPassword(ctx, fmt === 'pdf' ? o.password : undefined);
     const page = await ctx.newPage();
+    await installBrowserEgressPolicy(page, base);
     const downloadP = page.waitForEvent('download', { timeout: exportTimeoutMs(fmt) });
     // 'commit' returns as soon as navigation starts; the export fires later, after
     // the tool mounts + settles (onInit, fonts). waitForEvent above is the real gate.
@@ -381,12 +438,14 @@ async function renderTierB(
     }
     const path = await download.path();
     if (!path) throw new RenderError(`Tier-B download for "${toolId}" yielded no file.`);
-    const bytes = new Uint8Array(await readFile(path));
+    const bytes = await readBoundedDownload(path);
     await download.delete().catch(() => {});
     return { bytes, mime: mimeForFormat(fmt) };
   } finally {
+    clearPassword();
     await ctx.close();
   }
+  });
 }
 
 async function stampC2pa(bytes: Uint8Array, fmt: string, manifest: ToolManifest, values: Record<string, unknown>, o: RenderOpts): Promise<Uint8Array> {
@@ -444,7 +503,8 @@ export async function render(toolId: string, query: string, o: RenderOpts = {}):
   };
   const profile = o.profile ?? {};
   const warnings: string[] = [];
-  // Open-password is only wired through for standard `pdf` (see exportUrl); the
+  // Open-password is only wired through for standard `pdf` (via the one-shot
+  // browser binding); the
   // CMYK press path drops it, so the returned PDF would be UNprotected. Say so.
   if (merged.password && exportFmt === 'pdf-cmyk') {
     warnings.push('Password is not applied for pdf-cmyk - the returned PDF is not protected. Use format "pdf" for an open-password.');
@@ -528,6 +588,7 @@ export { needsBrowserTier };
 async function transformTierB(
   toolId: string, fileInputId: string, file: { name: string; mime: string; bytes: Uint8Array }, query: string,
 ): Promise<{ bytes: Uint8Array; filename: string }> {
+  return withBrowserJob(async () => {
   const base = await webShellBase();
   const p = new URLSearchParams(query);
   p.delete('export');
@@ -544,6 +605,7 @@ async function transformTierB(
   const ctx = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: true });
   try {
     const page = await ctx.newPage();
+    await installBrowserEgressPolicy(page, base);
     await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
     const picker = `.file-picker[data-input-id="${fileInputId}"] input.file-native`;
     try {
@@ -578,13 +640,14 @@ async function transformTierB(
     if (outcome.kind === 'timeout') throw new RenderError(`"${toolId}" produced no file for ${file.name} within the time limit. Nothing was written.`);
     const path = await outcome.d.path();
     if (!path) throw new RenderError(`Tier-B download for "${toolId}" yielded no file.`);
-    const bytes = new Uint8Array(await readFile(path));
+    const bytes = await readBoundedDownload(path);
     const filename = outcome.d.suggestedFilename() || file.name;
     await outcome.d.delete().catch(() => {});
     return { bytes, filename };
   } finally {
     await ctx.close();
   }
+  });
 }
 
 /** Transform path: file in → file out via a tool's exportFile hook. */
@@ -603,7 +666,18 @@ export async function transform(
   const inputId = fileInputId(tool.manifest);
   if (!inputId) throw new RenderError(`Tool "${toolId}" declares no file input.`);
 
-  const bytes = Uint8Array.from(Buffer.from(file.base64, 'base64'));
+  // Reject before Buffer.from allocates. HTTP calls have a request-body cap,
+  // but stdio clients reach this method directly.
+  const compactBase64 = file.base64.replace(/\s/g, '');
+  const padding = compactBase64.endsWith('==') ? 2 : compactBase64.endsWith('=') ? 1 : 0;
+  const estimatedBytes = Math.max(0, Math.floor(compactBase64.length * 3 / 4) - padding);
+  if (estimatedBytes > MAX_TRANSFORM_INPUT_BYTES) {
+    throw new RenderError(`Transform input exceeds the ${MAX_TRANSFORM_INPUT_BYTES}-byte decoded-file limit.`);
+  }
+  const bytes = Uint8Array.from(Buffer.from(compactBase64, 'base64'));
+  if (bytes.length > MAX_TRANSFORM_INPUT_BYTES) {
+    throw new RenderError(`Transform input exceeds the ${MAX_TRANSFORM_INPUT_BYTES}-byte decoded-file limit.`);
+  }
   const fileRef: InputFile = {
     __file: true,
     name: file.name || 'input',

@@ -8,7 +8,7 @@
  * returned as data by describe_tool. See plans/77-mcp-server.md section 3.
  */
 
-import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS } from '@lolly/engine';
+import { buildInputModel, serializeUrlState, parseUrlState, expandQuery, buildEmbedUrl, ENGINE_VERSION, verifyC2pa, resolveVerdict, defaultTrustAnchors, extractFileMetadata, HDR_DEFAULTS, compileDocument, inspectDocument, diffDocuments, measureDocument, packageDocument } from '@lolly/engine';
 import type { C2paVerdict } from '@lolly/engine';
 // Relative import (not `@lolly-tools/node-shell/...`): this file is inlined into the
 // serverless bundle, same as render.ts's node-shell imports.
@@ -19,6 +19,7 @@ import type { ContentBlock, ToolCallResult } from './protocol.ts';
 import { listTools, loadToolCached, loadIndex } from './catalog.ts';
 import { toolInputSchema, fileInputId } from './schema.ts';
 import { render, transform, mimeForFormat, isTextFormat, normFormat } from './render.ts';
+import { withHost } from './host.ts';
 import type { RenderOpts } from './render.ts';
 
 const WEB_BASE = (process.env.LOLLY_WEB_BASE || 'https://lolly.tools').replace(/\/$/, '');
@@ -135,6 +136,19 @@ function exportSettings(args: Record<string, unknown>): {
 }
 
 export const TOOL_DEFS: McpToolDef[] = [
+  ...(['compile', 'inspect', 'measure'] as const).map((verb): McpToolDef => ({
+    name: `lolly_${verb}`,
+    description: `${verb[0]!.toUpperCase()}${verb.slice(1)} a Lolly document without rasterising it.`,
+    inputSchema: { type: 'object', properties: { toolId: RENDER_ARGS.toolId, inputs: RENDER_ARGS.inputs, document: { type: 'object' }, ...(verb === 'inspect' ? { file: FILE_ARG } : {}) }, additionalProperties: false },
+  })),
+  {
+    name: 'lolly_diff', description: 'Semantically diff two compiled Lolly documents or recipe query strings.',
+    inputSchema: { type: 'object', properties: { a: {}, b: {} }, required: ['a', 'b'], additionalProperties: false },
+  },
+  {
+    name: 'lolly_package', description: 'Package a compiled Lolly document into portable .lolly bytes.',
+    inputSchema: { type: 'object', properties: { document: { type: 'object' } }, required: ['document'], additionalProperties: false },
+  },
   {
     name: 'lolly_list_tools',
     description: 'List Lolly tools in the on-brand catalog. Filter by free-text q, status, category, format, or capability.',
@@ -391,6 +405,35 @@ function c2paSetting(v: unknown): RenderOpts['c2pa'] {
 export async function callTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   try {
     switch (name) {
+      case 'lolly_compile':
+      case 'lolly_inspect':
+      case 'lolly_measure': {
+        if (name === 'lolly_inspect' && args['file'] && typeof args['file'] === 'object') {
+          const file = args['file'] as { base64?: unknown };
+          if (typeof file.base64 !== 'string') return errorResult('file.base64 is required.');
+          return textOnly(JSON.stringify(inspectDocument(Uint8Array.from(Buffer.from(file.base64, 'base64'))), null, 2));
+        }
+        let document = args['document'];
+        if (name === 'lolly_compile' || !document) {
+          const toolId = String(args['toolId'] ?? '');
+          if (!toolId || !TOOL_ID_RE.test(toolId)) return errorResult('A valid toolId or document is required.');
+          const tool = await loadToolCached(toolId).catch(() => null);
+          if (!tool) return errorResult(`Tool not found: ${toolId}.`);
+          const compiled = await withHost({}, async (_dom, host) => compileDocument(tool, (args['inputs'] as Record<string, never>) ?? {}, { host }));
+          if (name === 'lolly_compile') return textOnly(JSON.stringify(compiled, null, 2));
+          document = compiled.document;
+        }
+        return textOnly(JSON.stringify(name === 'lolly_inspect' ? inspectDocument(document as never) : measureDocument(document as never), null, 2));
+      }
+
+      case 'lolly_diff':
+        return textOnly(JSON.stringify(diffDocuments(args['a'] as never, args['b'] as never), null, 2));
+
+      case 'lolly_package': {
+        const packed = await packageDocument(args['document']);
+        return { content: [{ type: 'text', text: JSON.stringify(packed.manifest) }, { type: 'resource', resource: { uri: 'data:application/vnd.lolly+zip;base64,' + Buffer.from(packed.bytes).toString('base64'), mimeType: 'application/vnd.lolly+zip', blob: Buffer.from(packed.bytes).toString('base64') } }] } as ToolCallResult;
+      }
+
       case 'lolly_list_tools': {
         const tools = await listTools(args as never);
         const lines = tools.map(t => `• ${t.id} - ${t.name} [${t.status}] · formats: ${(t.formats ?? []).join(', ')} · ${t.width}×${t.height}`);

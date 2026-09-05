@@ -53,8 +53,11 @@ RUN npm ci --omit=dev --ignore-scripts
 
 # 3) The brand data + source the render path reads/imports at runtime.
 #    - schemas/: engine/src/validate.ts imports the 3 JSON schemas at load time.
-#    - shells/cli + shells/web/src: services/mcp/src/host.ts reuses the CLI bridge
-#      (createCliBridge), which imports shells/web/src/bridge/{pdf,svg-ir}.ts.
+#    - shells/cli: services/mcp/src/host.ts reuses the CLI bridge (createCliBridge).
+#      It no longer imports anything from shells/web - plans/202 WP1.1 moved pdf.ts
+#      and svg-ir.ts into packages/node-shell, copied above. shells/web/src stays
+#      only for src/webshell.ts's in-container `npm --workspace shells/web run build`
+#      fallback; drop it the day that fallback goes.
 #    (engine/ + services/mcp/ were copied above; npm deps incl. pdf-lib are installed.)
 COPY catalog       catalog
 COPY tools         tools
@@ -72,6 +75,11 @@ COPY shells/web/src shells/web/src
 RUN node services/mcp/scripts/install-browser.ts --with-deps \
  && node services/mcp/scripts/install-browser.ts --force \
  && node -e "const fs=require('fs');const p=require('playwright-core').chromium.executablePath();if(!fs.existsSync(p)){console.error('CHROMIUM MISSING at '+p);process.exit(1);}console.error('CHROMIUM OK at '+p)"
+
+# The browser and server do not need root. Cloud Run currently requires the
+# explicit no-sandbox switch set by deploy.sh, so the non-root UID is the hard
+# process boundary beneath Chromium rather than an accidental root fallback.
+USER node
 
 # Cloud Run injects $PORT (8080); http.ts reads process.env.PORT. The MCP server
 # does its OWN bearer/OAuth auth, so Cloud Run IAM stays public

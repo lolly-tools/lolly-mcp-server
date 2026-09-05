@@ -22,6 +22,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, extname, normalize } from 'node:path';
 import { REPO_ROOT } from './paths.ts';
+import { checkedBase } from './egress.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -39,7 +40,7 @@ let served: Promise<Served> | null = null;
 /** Base origin of a Lolly web shell to drive for Tier B (no trailing slash). */
 export async function webShellBase(): Promise<string> {
   const remote = process.env.LOLLY_WEB_BASE;
-  if (remote) return remote.replace(/\/$/, '');
+  if (remote) return checkedBase(remote).toString().replace(/\/$/, '');
   if (!served) served = buildAndServe().catch(err => { served = null; throw err; });
   return (await served).base;
 }

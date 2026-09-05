@@ -22,8 +22,10 @@ the repo root - so it travels when `services/mcp` splits into its own repo.
 - A Cloud Run service `lolly-mcp` running `node services/mcp/src/http.ts` (the
   same gateway as Vercel - OAuth discovery + `/mcp` JSON-RPC), with Chromium.
 - Image built by **Cloud Build** (native amd64) and stored in Artifact Registry.
-- `LOLLY_MCP_TOKEN` + `LOLLY_MCP_SIGNING_SECRET` from **Secret Manager**;
-  `LOLLY_WEB_BASE=https://lolly.tools` as a plain env var.
+- `LOLLY_MCP_TOKEN`, `LOLLY_MCP_SIGNING_SECRET`, and the durable rate-limit
+  store token from **Secret Manager**;
+  `LOLLY_MCP_PUBLIC_ORIGIN` (the canonical HTTPS issuer/resource origin) and
+  `LOLLY_WEB_BASE=https://lolly.tools` as plain env vars.
 - Public Cloud Run IAM (`--allow-unauthenticated`) **on purpose** - the MCP
   server's own bearer/OAuth is the gate, exactly like the Vercel endpoint.
 
@@ -31,15 +33,24 @@ the repo root - so it travels when `services/mcp` splits into its own repo.
 
 - `gcloud` CLI, authenticated (`gcloud auth login`), with a **project that has
   billing enabled**. (No local Docker needed - Cloud Build does the build.)
-- The two secret values (reuse the Vercel ones from `plans/secrets.md`).
+- The three secret values retrieved from the team's managed secret store, plus
+  a Redis-compatible HTTPS REST endpoint for cross-instance admission control.
 
 ## Deploy
 
 ```bash
-cd services/mcp/deploy
-cp deploy.env.example deploy.env     # fill PROJECT_ID + the two secrets
-./deploy.sh
+mkdir -p ../lolly-private/lolly
+chmod 700 ../lolly-private ../lolly-private/lolly
+cp services/mcp/deploy/deploy.env.example ../lolly-private/lolly/mcp-deploy.env
+chmod 600 ../lolly-private/lolly/mcp-deploy.env
+# Fill PROJECT_ID, origin, limiter + secrets, then:
+services/mcp/deploy/deploy.sh
 ```
+
+The paths above assume the parent `lolly` and `lolly-private` directories are siblings.
+Set `LOLLY_PRIVATE_DIR` or `LOLLY_MCP_DEPLOY_ENV_FILE` to select a different private
+location. The deploy script refuses a symlinked environment file. Do not copy the filled
+file into this public checkout.
 
 `deploy.sh` is idempotent - it enables the APIs, creates the Artifact Registry
 repo + Secret Manager secrets, grants the runtime service account secret access,
@@ -60,8 +71,9 @@ claude mcp add --transport http lolly-full https://<cloud-run-url>/mcp \
 # (auto-discovers OAuth, paste the token on the consent page)
 ```
 
-OAuth discovery self-describes from the request `Host`, so the raw `*.run.app`
-URL works out of the box - no extra config to test.
+OAuth discovery always describes `LOLLY_MCP_PUBLIC_ORIGIN`; request `Host` and
+forwarding headers are ignored. Set it to the raw `*.run.app` URL or the mapped
+domain before deployment, then use that same origin in clients.
 
 ### Optional: brand it as `mcp.lolly.tools`
 
@@ -84,8 +96,34 @@ Add the CNAME it prints to the `lolly.tools` DNS zone. Then use
   but the first request after idle pays a cold start (image pull + Chromium
   launch, a few seconds). For snappy demos set `--min-instances 1`.
 - **Resources:** `--cpu 2 --memory 2Gi`, `--concurrency 4`, `--timeout 600`.
-  Video is CPU/RAM heavy - bump memory (e.g. `4Gi`) and lower concurrency if you
-  see OOM, or raise `--timeout` (Cloud Run allows up to 3600s).
+  The process admits at most two active browser contexts and eight queued jobs by
+  default; a queue wait over 30 seconds is refused. Tune
+  `LOLLY_BROWSER_MAX_CONCURRENCY`, `LOLLY_BROWSER_MAX_QUEUE`, and
+  `LOLLY_BROWSER_QUEUE_TIMEOUT_MS` with the container memory. Video is CPU/RAM
+  heavy - bump memory (e.g. `4Gi`) and lower concurrency if you see OOM, or raise
+  `--timeout` (Cloud Run allows up to 3600s).
+- **Distributed admission:** production refuses to start without
+  `LOLLY_RATE_LIMIT_REST_URL` and `LOLLY_RATE_LIMIT_REST_TOKEN`. The service
+  sends only SHA-256-derived bucket keys to that store, never raw IPs, bearer
+  credentials, or OAuth subjects. Limiter outages return 503; exceeded budgets
+  return 429 with `Retry-After`. `LOLLY_MCP_RPM` and `LOLLY_OAUTH_RPM` tune the
+  per-minute defaults. `LOLLY_ALLOW_IN_MEMORY_RATE_LIMIT=1` is a deliberate
+  single-instance development escape hatch and must not be set here.
+- **Browser egress:** Chromium may contact only the exact `LOLLY_WEB_BASE`
+  origin plus any explicit origins in `LOLLY_BROWSER_ALLOWED_ORIGINS`. Each
+  remote hostname is resolved before navigation and the request is aborted if
+  any answer is loopback, link-local, private, metadata, reserved, or otherwise
+  non-public. Keep the allowlist empty unless a reviewed instance requires an
+  extra origin. This is application-layer enforcement; production projects
+  should additionally route all Cloud Run traffic through a VPC/firewall or
+  egress proxy which blocks cloud metadata and RFC 1918/link-local ranges. The
+  deploy is not considered hardened until that infrastructure policy has been
+  verified outside this repository.
+- **Browser sandbox:** the image runs as the unprivileged `node` user. Cloud Run
+  is deployed with the explicit `LOLLY_BROWSER_NO_SANDBOX=1` compatibility flag;
+  without that flag Chromium sandboxing is the default. Keep Cloud Run's
+  container isolation, no host mounts, resource limits, and ephemeral filesystem
+  if the compatibility flag is used.
 - **Two endpoints, one credential:** keep the Vercel endpoint for light/vector
   work and add this for full raster/pdf/video, or make this the single canonical
   endpoint. The `LOLLY_MCP_TOKEN` is shared, so either works with the same token.
